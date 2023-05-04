@@ -12,6 +12,7 @@ import torch
 from .constants import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 from .model import CLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custom_text_state_dict,\
     resize_pos_embed, get_cast_dtype, resize_text_pos_embed, set_model_preprocess_cfg
+from .mammut_model import MaMMUT
 from .coca_model import CoCa
 from .loss import ClipLoss, DistillClipLoss, CoCaLoss, SigLipLoss
 from .openai import load_openai_model
@@ -20,9 +21,12 @@ from .pretrained import is_pretrained_cfg, get_pretrained_cfg, download_pretrain
 from .transform import image_transform_v2, AugmentationCfg, PreprocessCfg, merge_preprocess_dict, merge_preprocess_kwargs
 from .tokenizer import HFTokenizer, SimpleTokenizer, DEFAULT_CONTEXT_LENGTH
 
+_IMAGE_CAPTIONING_MODELS = ["coca", "mammut"]
+
 HF_HUB_PREFIX = 'hf-hub:'
 _MODEL_CONFIG_PATHS = [Path(__file__).parent / f"model_configs/"]
 _MODEL_CONFIGS = {}  # directory (model_name: config) of model architecture configs
+
 
 
 def _natural_key(string_):
@@ -246,6 +250,8 @@ def create_model(
         if custom_text:
             if "multimodal_cfg" in model_cfg:
                 model = CoCa(**model_cfg, cast_dtype=cast_dtype)
+            elif "mammut" in model_name:
+                model = MaMMUT(**model_cfg, cast_dtype=cast_dtype)  
             else:
                 model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
         else:
@@ -330,7 +336,7 @@ def create_loss(args):
             world_size=args.world_size,
             use_horovod=args.horovod,
         )
-    elif "coca" in args.model.lower():
+    elif any(m in args.model.lower() for m in ["coca", "mammut"]):
         return CoCaLoss(
             caption_loss_weight=args.coca_caption_loss_weight,
             clip_loss_weight=args.coca_contrastive_loss_weight,

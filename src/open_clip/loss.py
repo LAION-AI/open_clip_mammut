@@ -176,7 +176,6 @@ class CoCaLoss(ClipLoss):
 
         return clip_loss, caption_loss
 
-
 class DistillClipLoss(ClipLoss):
 
     def dist_loss(self, teacher_logits, student_logits):
