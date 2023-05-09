@@ -11,7 +11,7 @@ from torch.utils.checkpoint import checkpoint
 from .utils import to_2tuple
 from .pos_embed import get_2d_sincos_pos_embed
 
-_TRANSFORMER_TYPES = ["transformer", "cross_attn"]
+_TRANSFORMER_TYPES = ["transformer", "multimodal"]
 
 
 class LayerNormFp32(nn.LayerNorm):
@@ -317,13 +317,13 @@ class Transformer(nn.Module):
             return self.resblocks[0].mlp.c_fc.int8_original_dtype
         return self.resblocks[0].mlp.c_fc.weight.dtype
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor = None, attn_mask: Optional[torch.Tensor] = None):
+    def forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None):
         for r in self.resblocks:
             if self.grad_checkpointing and not torch.jit.is_scripting():
                 # TODO: handle kwargs https://github.com/pytorch/pytorch/issues/79887#issuecomment-1161758372
-                x = checkpoint(r, x, y, y, attn_mask)
+                x = checkpoint(r, x, None, None, attn_mask)
             else:
-                x = r(x, y, y, attn_mask=attn_mask)
+                x = r(x, attn_mask=attn_mask)
         return x
     
     def init_parameters(self):
@@ -446,7 +446,7 @@ class VisionTransformer(nn.Module):
 
     def lock(self, unlocked_groups=0, freeze_bn_stats=False):
         for param in self.parameters():
-            param.requires_grad = FalseFalse
+            param.requires_grad = False
 
         if unlocked_groups != 0:
             groups = [
@@ -598,6 +598,7 @@ class TextTransformer(nn.Module):
             transformer_type: str = "transformer",
             pad_id: int = 0,
             output_tokens: bool = False,
+            token_average_pool: bool = False,
             **transformer_kwargs
     ):
         super().__init__()
@@ -612,6 +613,8 @@ class TextTransformer(nn.Module):
         self.pool_type = pool_type
 
         self.token_embedding = nn.Embedding(vocab_size, width)
+        self.token_average_pool = token_average_pool
+
         if embed_cls:
             self.cls_emb = nn.Parameter(torch.empty(width))
             self.num_pos += 1
@@ -687,20 +690,16 @@ class TextTransformer(nn.Module):
         additive_mask = torch.repeat_interleave(additive_mask, self.heads, 0)
         return additive_mask
 
-<<<<<<< HEAD
-    def forward(self, text):
-=======
     def _repeat(self, t, N: int):
         return t.reshape(1, 1, -1).repeat(N, 1, 1)
 
     def forward(self, text, cross_embs=None, attn_mask=None):
->>>>>>> 8d2589f (initial commits)
         cast_dtype = self.transformer.get_cast_dtype()
         seq_len = text.shape[1]
 
         x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
         if attn_mask is None:
-            attn_mask = self.attn_mask 
+            attn_mask = self.attn_mask
         if self.cls_emb is not None:
             seq_len += 1
             x = torch.cat([x, _expand_token(self.cls_emb, x.shape[0])], dim=1)
@@ -710,22 +709,20 @@ class TextTransformer(nn.Module):
 
         x = x + self.positional_embedding[:seq_len].to(cast_dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.transformer(x, cross_embs, cross_embs, attn_mask=attn_mask)
+        if cross_embs is not None:
+            x = self.transformer(x, cross_embs, cross_embs, attn_mask=attn_mask)
+        else:
+            x = self.transformer(x, attn_mask=attn_mask)
         x = x.permute(1, 0, 2)  # LND -> NLD
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         if self.cls_emb is not None:
-<<<<<<< HEAD
             # presence of appended cls embed (CoCa) overrides pool_type, always take last token
             pooled, tokens = text_global_pool(x, pool_type='last')
             pooled = self.ln_final(pooled)  # final LN applied after pooling in this case
-=======
-            pooled, tokens = x[:, -1], x[:, :-1]
-            pooled = self.ln_final(pooled)
         elif self.token_average_pool:
             tokens = self.ln_final(tokens)
             pooled = tokens.mean(1)
->>>>>>> 8d2589f (initial commits)
         else:
             x = self.ln_final(x)
             pooled, tokens = text_global_pool(x, text, pool_type=self.pool_type)
@@ -838,7 +835,7 @@ class MultimodalTransformer(Transformer):
         x = self.ln_final(x)
 
         if self.text_projection is not None:
-                x = x @ self.text_projection
+            x = x @ self.text_projection
 
         return x
 
