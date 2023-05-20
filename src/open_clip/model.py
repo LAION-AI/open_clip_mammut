@@ -81,6 +81,9 @@ class CLIPTextCfg:
     hf_model_pretrained: bool = True
     hf_proj_type: str = 'mlp'
     hf_pooler_type: str = 'mean_pooler'  # attentional pooling for HF models
+    is_multimodal_decoder: bool = False
+    token_average_pool: bool = False
+    cross_attn_ratio: int = 1
 
 
 def get_cast_dtype(precision: str):
@@ -175,6 +178,7 @@ def _build_text_tower(
         text_cfg: CLIPTextCfg,
         quick_gelu: bool = False,
         cast_dtype: Optional[torch.dtype] = None,
+        language_modeling: bool = False,
         **transformer_kwargs
 ):
     if isinstance(text_cfg, dict):
@@ -208,12 +212,17 @@ def _build_text_tower(
             output_dim=embed_dim,
             embed_cls=text_cfg.embed_cls,
             no_causal_mask=text_cfg.no_causal_mask,
+            output_tokens=text_cfg.output_tokens,
+            cross_attn_ratio=text_cfg.cross_attn_ratio,
+            token_average_pool=text_cfg.token_average_pool,
             pad_id=text_cfg.pad_id,
             pool_type=text_cfg.pool_type,
             proj_bias=text_cfg.proj_bias,
             output_tokens=text_cfg.output_tokens,
             act_layer=act_layer,
             norm_layer=norm_layer,
+            language_modeling=language_modeling,
+            is_multimodal_decoder=text_cfg.is_multimodal_decoder,
             **transformer_kwargs
         )
 

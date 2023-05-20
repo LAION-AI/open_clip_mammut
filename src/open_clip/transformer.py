@@ -575,8 +575,7 @@ def text_global_pool(x, text: Optional[torch.Tensor] = None, pool_type: str = 'a
 
 
 class TextTransformer(nn.Module):
-    output_tokens: torch.jit.Final[bool]
-
+    
     def __init__(
             self,
             context_length: int = 77,
@@ -595,15 +594,18 @@ class TextTransformer(nn.Module):
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,
             embed_cls: bool = False,
-            transformer_type: str = "transformer",
             pad_id: int = 0,
             output_tokens: bool = False,
             token_average_pool: bool = False,
+            language_modeling: bool = False,
+            is_multimodal_decoder = False,
             **transformer_kwargs
     ):
+
         super().__init__()
         assert pool_type in ('first', 'last', 'argmax', 'none')
         self.output_tokens = output_tokens
+        self.is_multimodal_decoder = is_multimodal_decoder
         self.num_pos = self.context_length = context_length
         self.vocab_size = vocab_size
         self.width = width
@@ -614,6 +616,7 @@ class TextTransformer(nn.Module):
 
         self.token_embedding = nn.Embedding(vocab_size, width)
         self.token_average_pool = token_average_pool
+        self.language_modeling = language_modeling
 
         if embed_cls:
             self.cls_emb = nn.Parameter(torch.empty(width))
@@ -621,14 +624,11 @@ class TextTransformer(nn.Module):
         else:
             self.cls_emb = None
         self.positional_embedding = nn.Parameter(torch.empty(self.num_pos, width))
-        
-        if transformer_type == "transformer":
-            _transformer_type = Transformer
-        elif transformer_type == "multimodal":
-            _transformer_type = MultimodalTransformer
-        elif transformer_type not in _TRANSFORMER_TYPES:
-            assert False, "this transformer type does not exist"
-             
+
+        _transformer_type = (
+            Transformer if not self.is_multimodal_decoder else MultimodalTransformer
+        )
+
         self.transformer = _transformer_type(
             width=width,
             layers=layers,
@@ -693,13 +693,14 @@ class TextTransformer(nn.Module):
     def _repeat(self, t, N: int):
         return t.reshape(1, 1, -1).repeat(N, 1, 1)
 
-    def forward(self, text, cross_embs=None, attn_mask=None):
+    def forward(self, text, cross_embs=None, attn_mask=None, cross_attn_mask=None):
         cast_dtype = self.transformer.get_cast_dtype()
         seq_len = text.shape[1]
 
         x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
-        if attn_mask is None:
+        if self.attn_mask is not None and attn_mask is None:
             attn_mask = self.attn_mask
+
         if self.cls_emb is not None:
             seq_len += 1
             x = torch.cat([x, _expand_token(self.cls_emb, x.shape[0])], dim=1)
@@ -708,12 +709,12 @@ class TextTransformer(nn.Module):
                 attn_mask = attn_mask[None, :seq_len, :seq_len] + cls_mask[:, :seq_len, :seq_len]
 
         x = x + self.positional_embedding[:seq_len].to(cast_dtype)
-        x = x.permute(1, 0, 2)  # NLD -> LND
-        if cross_embs is not None:
-            x = self.transformer(x, cross_embs, cross_embs, attn_mask=attn_mask)
+        if self.is_multimodal_decoder:
+            x = self.transformer(cross_embs, x, attn_mask=attn_mask)
         else:
+            x = x.permute(1, 0, 2)  # NLD -> LND
             x = self.transformer(x, attn_mask=attn_mask)
-        x = x.permute(1, 0, 2)  # LND -> NLD
+            x = x.permute(1, 0, 2)  # LND -> NLD
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         if self.cls_emb is not None:
@@ -721,8 +722,8 @@ class TextTransformer(nn.Module):
             pooled, tokens = text_global_pool(x, pool_type='last')
             pooled = self.ln_final(pooled)  # final LN applied after pooling in this case
         elif self.token_average_pool:
-            tokens = self.ln_final(tokens)
-            pooled = tokens.mean(1)
+            x = self.ln_final(x)
+            pooled, tokens = x.mean(1), x
         else:
             x = self.ln_final(x)
             pooled, tokens = text_global_pool(x, text, pool_type=self.pool_type)
@@ -749,8 +750,8 @@ class MultimodalTransformer(Transformer):
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,
             mlp_ratio: float = 4.0,
-            n_cross_ratio = 1,
-            is_decoder: bool = False, # if this is false remaining params are useless
+            cross_attn_ratio = 1,
+            is_decoder: bool = False, # if this is false below values are useless
             context_length: int = 77,
             output_dim: int = 512,
     ):
@@ -766,7 +767,7 @@ class MultimodalTransformer(Transformer):
         )
 
 
-        n_cross_attn, _ = divmod(layers, n_cross_ratio)
+        n_cross_attn, _ = divmod(layers, cross_attn_ratio)
         self.cross_step, _ = divmod(layers, n_cross_attn)
 
         self.context_length = context_length
@@ -803,24 +804,28 @@ class MultimodalTransformer(Transformer):
 
     def forward(self, image_embs, text_embs, attn_mask=None):
         text_embs = text_embs.permute(1, 0, 2)  # NLD -> LND
-        image_embs = image_embs.permute(1, 0, 2)  # NLD -> LND
+        if image_embs is not None:
+            image_embs = image_embs.permute(1, 0, 2)  # NLD -> LND
         seq_len = text_embs.shape[0]
 
-        if self.attn_mask is not None and attn_mask is None:
+        # TODO: handle different cases better, currently 
+        # differentiates coca from mammut based on image_embs
+        if self.attn_mask is not None and attn_mask is None and image_embs is not None:
             attn_mask = self.attn_mask
+        attn_mask = attn_mask[:seq_len, :seq_len]
 
         for idx, resblock in enumerate(self.resblocks):
             cross_attn_idx, _r = divmod(idx, self.cross_step)
-            do_cross_attn = _r == 0
+            do_cross_attn = _r == 0 and image_embs is not None
 
             if self.grad_checkpointing and not torch.jit.is_scripting():
                 # TODO: handle kwargs https://github.com/pytorch/pytorch/issues/79887#issuecomment-1161758372
-                text_embs = checkpoint(resblock, text_embs, None, None, attn_mask[:seq_len, :seq_len])
+                text_embs = checkpoint(resblock, text_embs, None, None, attn_mask)
                 if do_cross_attn:
                     cross_attn = self.cross_attn[cross_attn_idx]
-                    text_embs = checkpoint(cross_attn, text_embs, image_embs, image_embs, None)
+                    text_embs = checkpoint(cross_attn, text_embs, image_embs, image_embs)
             else:
-                text_embs = resblock(text_embs, None, None, attn_mask=attn_mask[:seq_len, :seq_len])
+                text_embs = resblock(text_embs, None, None, attn_mask=attn_mask)
                 if do_cross_attn:
                     cross_attn = self.cross_attn[cross_attn_idx]
                     text_embs = cross_attn(text_embs, k_x=image_embs, v_x=image_embs)
@@ -844,7 +849,7 @@ class MultimodalTransformer(Transformer):
         self.grad_checkpointing = enable
 
     def init_parameters(self):
-        proj_std = (self.width ** -0.5) * ((2 * self.transformer.layers) ** -0.5)
+        proj_std = (self.width ** -0.5) * ((2 * self.layers) ** -0.5)
         attn_std = self.width ** -0.5
         fc_std = (2 * self.width) ** -0.5
         for block in self.resblocks:
