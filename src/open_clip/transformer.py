@@ -556,7 +556,7 @@ class VisionTransformer(nn.Module):
 
         if self.output_tokens:
             return pooled, tokens
-        
+
         return pooled
 
 
