@@ -795,6 +795,8 @@ class MultimodalTransformer(Transformer):
             self.text_projection = None
             self.attn_mask = None
 
+        self.init_parameters()
+
     def build_attention_mask(self):
         # lazily create causal attention mask, with full attention between the tokens
         # pytorch uses additive attention mask; fill with -inf
