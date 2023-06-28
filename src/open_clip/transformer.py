@@ -529,6 +529,7 @@ class VisionTransformer(nn.Module):
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
 
+<<<<<<< HEAD
         if self.attn_pool is not None:
             if self.attn_pool_contrastive is not None:
                 # This is untested, WIP pooling that should match paper
@@ -550,6 +551,14 @@ class VisionTransformer(nn.Module):
         else:
             x = self.ln_post(x)
             pooled, tokens = self._global_pool(x)
+=======
+        pooled, tokens = self._global_pool(x)
+        if self.attn_pool_cls is not None:
+            pooled = self.attn_pool_cls(pooled.unsqueeze(1)).squeeze(1)
+            tokens = self.attn_pool_tokens(tokens)
+
+        pooled = self.ln_post(pooled)
+>>>>>>> dce72e8 (split pooling)
 
         if self.proj is not None:
             pooled = pooled @ self.proj
