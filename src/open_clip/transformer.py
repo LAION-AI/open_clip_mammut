@@ -530,6 +530,7 @@ class VisionTransformer(nn.Module):
         x = x.permute(1, 0, 2)  # LND -> NLD
 
         if self.attn_pool is not None:
+<<<<<<< HEAD
             if self.attn_pool_contrastive is not None:
                 # This is untested, WIP pooling that should match paper
                 x = self.ln_post(x)  # TBD LN first or separate one after each pool?
@@ -550,6 +551,14 @@ class VisionTransformer(nn.Module):
         else:
             x = self.ln_post(x)
             pooled, tokens = self._global_pool(x)
+=======
+            x = self.attn_pool(x)
+            x = self.ln_post(x)
+            pooled, tokens = self._global_pool(x)
+        else:
+            pooled, tokens = self._global_pool(x)
+            pooled = self.ln_post(pooled)
+>>>>>>> 826e799 (revert multiple attn pooler)
 
         if self.proj is not None:
             pooled = pooled @ self.proj
@@ -576,6 +585,7 @@ def text_global_pool(x, text: Optional[torch.Tensor] = None, pool_type: str = 'a
 
 
 class TextTransformer(nn.Module):
+    output_tokens: torch.jit.Final[bool]
     
     def __init__(
             self,
