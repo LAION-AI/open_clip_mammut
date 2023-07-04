@@ -529,7 +529,6 @@ class VisionTransformer(nn.Module):
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
 
-<<<<<<< HEAD
         if self.attn_pool is not None:
             if self.attn_pool_contrastive is not None:
                 # This is untested, WIP pooling that should match paper
@@ -551,14 +550,6 @@ class VisionTransformer(nn.Module):
         else:
             x = self.ln_post(x)
             pooled, tokens = self._global_pool(x)
-=======
-        pooled, tokens = self._global_pool(x)
-        if self.attn_pool_cls is not None:
-            pooled = self.attn_pool_cls(pooled.unsqueeze(1)).squeeze(1)
-            tokens = self.attn_pool_tokens(tokens)
-
-        pooled = self.ln_post(pooled)
->>>>>>> dce72e8 (split pooling)
 
         if self.proj is not None:
             pooled = pooled @ self.proj
@@ -693,7 +684,11 @@ class TextTransformer(nn.Module):
 
     def build_cls_mask(self, text, cast_dtype: torch.dtype):
         cls_mask = (text != self.pad_id).unsqueeze(1)
+<<<<<<< HEAD
         cls_mask = F.pad(cls_mask, (1, 0, cls_mask.shape[2], 0), value=True)
+=======
+        cls_mask = F.pad(cls_mask, (0, 1, cls_mask.shape[2], 0), value=1.0)
+>>>>>>> 4b95dd4 (fix padding and 0 loss)
         additive_mask = torch.empty(cls_mask.shape, dtype=cast_dtype, device=cls_mask.device)
         additive_mask.fill_(0)
         additive_mask.masked_fill_(~cls_mask, float("-inf"))
