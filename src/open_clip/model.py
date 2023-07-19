@@ -211,7 +211,6 @@ def _build_text_tower(
             embed_cls=text_cfg.embed_cls,
             no_causal_mask=text_cfg.no_causal_mask,
             output_tokens=text_cfg.output_tokens,
-            token_average_pool=text_cfg.token_average_pool,
             pad_id=text_cfg.pad_id,
             pool_type=text_cfg.pool_type,
             proj_bias=text_cfg.proj_bias,

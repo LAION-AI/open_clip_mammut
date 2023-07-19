@@ -610,7 +610,6 @@ class TextTransformer(nn.Module):
 
         self.token_embedding = nn.Embedding(vocab_size, width)
         self.token_average_pool = token_average_pool
-        self.language_modeling = language_modeling
 
         if embed_cls:
             self.cls_emb = nn.Parameter(torch.empty(width))
@@ -689,6 +688,7 @@ class TextTransformer(nn.Module):
 
         x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
 
+        attn_mask = self.attn_mask
         if self.cls_emb is not None:
             seq_len += 1
             x = torch.cat([x, _expand_token(self.cls_emb, x.shape[0])], dim=1)
@@ -703,12 +703,17 @@ class TextTransformer(nn.Module):
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         if self.cls_emb is not None:
+<<<<<<< HEAD
             # presence of appended cls embed (CoCa) overrides pool_type, always take last token
             pooled, tokens = text_global_pool(x, pool_type='last')
             pooled = self.ln_final(pooled)  # final LN applied after pooling in this case
         elif self.token_average_pool:
             x = self.ln_final(x)
             pooled, tokens = x.mean(1), x
+=======
+            pooled, tokens = x[:, -1], x[:, :-1]
+            pooled = self.ln_final(pooled)
+>>>>>>> 5a29467 (fix args)
         else:
             x = self.ln_final(x)
             pooled, tokens = text_global_pool(x, text, pool_type=self.pool_type)
