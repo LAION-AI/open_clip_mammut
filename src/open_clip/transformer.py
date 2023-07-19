@@ -703,17 +703,12 @@ class TextTransformer(nn.Module):
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         if self.cls_emb is not None:
-<<<<<<< HEAD
             # presence of appended cls embed (CoCa) overrides pool_type, always take last token
             pooled, tokens = text_global_pool(x, pool_type='last')
             pooled = self.ln_final(pooled)  # final LN applied after pooling in this case
         elif self.token_average_pool:
             x = self.ln_final(x)
             pooled, tokens = x.mean(1), x
-=======
-            pooled, tokens = x[:, -1], x[:, :-1]
-            pooled = self.ln_final(pooled)
->>>>>>> 5a29467 (fix args)
         else:
             x = self.ln_final(x)
             pooled, tokens = text_global_pool(x, text, pool_type=self.pool_type)
@@ -744,8 +739,8 @@ class MultimodalTransformer(Transformer):
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,            
             cross_attn_ratio = 1,
-            does_full_decoding: bool = False, # if this is false below values are useless
             output_dim: int = 512,
+            does_full_decoding: bool = False, # if this is false below values are useless
             vocab_size: int = 49408,
     ):
 
@@ -791,13 +786,36 @@ class MultimodalTransformer(Transformer):
         if self.does_full_decoding:
             self.num_pos = self.context_length
             self.token_embedding = nn.Embedding(vocab_size, width)
-            self.positional_embedding = nn.Parameter(torch.randn(self.num_pos, width))
+            self.positional_embedding = nn.Parameter(torch.empty(self.num_pos, width))
         else:
             self.num_pos = None
             self.token_embedding = None
             self.positional_embedding = None
 
         self.init_parameters()
+
+    def init_parameters(self):
+        
+        proj_std = (self.width ** -0.5) * ((2 * self.layers) ** -0.5)
+        attn_std = self.width ** -0.5
+        fc_std = (2 * self.width) ** -0.5
+        for block in self.resblocks:
+            nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
+            nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
+            nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
+            nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
+        for block in self.cross_attn:
+            nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
+            nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
+            nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
+            nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
+
+        if self.text_projection is not None:
+            nn.init.normal_(self.text_projection, std=self.width ** -0.5)
+            
+        if self.does_full_decoding:
+            nn.init.normal_(self.token_embedding.weight, std=0.02)
+            nn.init.normal_(self.positional_embedding, std=0.01)
 
     def build_attention_mask(self):
         # lazily create causal attention mask, with full attention between the tokens
