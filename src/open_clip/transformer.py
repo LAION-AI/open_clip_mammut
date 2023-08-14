@@ -757,7 +757,7 @@ class MultimodalTransformer(nn.Module):
     ):
 
         super().__init__()
-        
+
         self.width = width
         self.layers = layers
         self.grad_checkpointing = False
@@ -768,21 +768,21 @@ class MultimodalTransformer(nn.Module):
 
         self.resblocks = nn.ModuleList([])
         self.cross_attn = nn.ModuleList([])
-        
+
         for l_idx in range(layers):
 
-            _, _r = divmod(l_idx, self.cross_step)
-            has_cross_attn = _r == 0
+            _, r = divmod(l_idx, self.cross_step)
+            has_cross_attn = r == 0
 
             self.resblocks.append(
                 ResidualAttentionBlock(
-                    width, 
-                    heads, 
-                    mlp_ratio, 
-                    ls_init_value=ls_init_value, 
-                    act_layer=act_layer, 
+                    width,
+                    heads,
+                    mlp_ratio,
+                    ls_init_value=ls_init_value,
+                    act_layer=act_layer,
                     norm_layer=norm_layer,
-                    has_mlp=has_cross_attn or has_mlp,
+                    has_mlp=(not has_cross_attn) or has_mlp,
                 )
             )
 
@@ -798,7 +798,7 @@ class MultimodalTransformer(nn.Module):
                         is_cross_attention=True,
                     )
                 )
-        
+
         assert len(self.cross_attn) == n_cross_attn, "the number of cross attn is incorrect"
 
         self.is_decoder = is_decoder
@@ -811,7 +811,7 @@ class MultimodalTransformer(nn.Module):
             self.text_projection = None
             self.attn_mask = None
         self.does_full_decoding = does_full_decoding
-        
+
         if self.does_full_decoding:
             self.num_pos = self.context_length
             self.token_embedding = nn.Embedding(vocab_size, width)
@@ -820,7 +820,7 @@ class MultimodalTransformer(nn.Module):
             self.num_pos = None
             self.token_embedding = None
             self.positional_embedding = None
-        
+
         self.output_tokens = output_tokens
 
         self.init_parameters()
@@ -841,11 +841,13 @@ class MultimodalTransformer(nn.Module):
         mask.fill_(float("-inf"))
         mask.triu_(1) # zero out the lower diagonal
         return mask
-    
+
     def get_cast_dtype(self) -> torch.dtype:
-        if hasattr(self.resblocks[0].mlp.c_fc, 'int8_original_dtype'):
-            return self.resblocks[0].mlp.c_fc.int8_original_dtype
-        return self.resblocks[0].mlp.c_fc.weight.dtype
+        for resblock in self.resblocks:
+            if hasattr(resblock, 'mlp') and resblock.mlp is not None:
+                if hasattr(resblock.mlp.c_fc, 'int8_original_dtype'):
+                    return resblock.mlp.c_fc.int8_original_dtype
+                return resblock.mlp.c_fc.weight.dtype
 
     def forward(self, image_embs, text_embs):
         seq_len = text_embs.shape[1]
@@ -857,8 +859,6 @@ class MultimodalTransformer(nn.Module):
         text_embs = text_embs.permute(1, 0, 2)  # NLD -> LND
         if image_embs is not None:
             image_embs = image_embs.permute(1, 0, 2)  # NLD -> LND
-
-        
 
         # TODO: handle different cases better, currently 
         # differentiates coca from mammut based on image_embs
@@ -891,7 +891,7 @@ class MultimodalTransformer(nn.Module):
 
         if self.text_projection is not None:
             logits = x @ self.text_projection
-            
+
         if self.output_tokens:
             return logits, x
 
