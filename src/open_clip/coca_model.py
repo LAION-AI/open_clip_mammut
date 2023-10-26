@@ -157,7 +157,6 @@ class CoCa(nn.Module, Generator):
         if is_training:
             token_embs = token_embs[:, :-1]
         print(token_embs.shape)
-
         logits = self.text_decoder(image_embs, token_embs)
         out_dict = {
             "image_features": image_latent,
