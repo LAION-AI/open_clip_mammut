@@ -214,7 +214,6 @@ def _build_text_tower(
             pad_id=text_cfg.pad_id,
             pool_type=text_cfg.pool_type,
             proj_bias=text_cfg.proj_bias,
-            output_tokens=text_cfg.output_tokens,
             act_layer=act_layer,
             norm_layer=norm_layer,
         )

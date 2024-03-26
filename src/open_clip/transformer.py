@@ -604,8 +604,6 @@ class TextTransformer(nn.Module):
             proj_bias: bool = False,
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,
-            embed_cls: bool = False,
-            pad_id: int = 0,
             output_tokens: bool = False,
     ):
 
@@ -621,7 +619,6 @@ class TextTransformer(nn.Module):
         self.pool_type = pool_type
 
         self.token_embedding = nn.Embedding(vocab_size, width)
-        self.token_average_pool = token_average_pool
 
         if embed_cls:
             self.cls_emb = nn.Parameter(torch.empty(width))
@@ -718,9 +715,6 @@ class TextTransformer(nn.Module):
             # presence of appended cls embed (CoCa) overrides pool_type, always take last token
             pooled, tokens = text_global_pool(x, pool_type='last')
             pooled = self.ln_final(pooled)  # final LN applied after pooling in this case
-        elif self.token_average_pool:
-            x = self.ln_final(x)
-            pooled, tokens = x.mean(1), x
         else:
             x = self.ln_final(x)
             pooled, tokens = text_global_pool(x, text, pool_type=self.pool_type)
@@ -803,15 +797,9 @@ class MultimodalTransformer(nn.Module):
 
         assert len(self.cross_attn) == n_cross_attn, "the number of cross attn is incorrect"
 
-        self.is_decoder = is_decoder
-        if self.is_decoder:
-            self.ln_final = norm_layer(width)
-            self.text_projection = nn.Parameter(torch.empty(width, output_dim))
-            self.register_buffer('attn_mask', self.build_attention_mask(), persistent=False)
-        else:
-            self.ln_final = None
-            self.text_projection = None
-            self.attn_mask = None
+        self.ln_final = norm_layer(width)
+        self.text_projection = nn.Parameter(torch.empty(width, output_dim))
+        self.register_buffer('attn_mask', self.build_attention_mask(), persistent=False)
         self.does_full_decoding = does_full_decoding
 
         if self.does_full_decoding:
