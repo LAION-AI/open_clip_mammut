@@ -275,6 +275,19 @@ def main(args):
             unlocked_layers=args.lock_text_unlocked_layers,
             freeze_layer_norm=args.lock_text_freeze_layer_norm)
 
+    if args.model.startswith("sg") or args.model.startswith("sd"):
+        if args.sg_contrastive_loss_weight == 0:
+            model.no_contrastive()
+        if args.sg_image_loss_weight == 0 and args.sg_unimodal_image_loss_weight == 0:
+            model.no_image_decoder()
+        elif args.sg_unimodal_image_loss_weight == 0:
+            model.no_unimodal_image()
+        
+        if args.sg_caption_loss_weight == 0 and args.sg_unimodal_caption_loss_weight == 0:
+            model.no_text_decoder()
+        elif args.sg_unimodal_caption_loss_weight == 0:
+            model.no_unimodal_text()
+
     if args.grad_checkpointing:
         model.set_grad_checkpointing()
 

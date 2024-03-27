@@ -407,6 +407,36 @@ def parse_args(args):
         help="Weight assigned to contrastive loss when training CoCa."
     )
     parser.add_argument(
+        "--sg-caption-loss-weight",
+        type=float,
+        default=2.0,
+        help="Weight assigned to caption loss in CoCa."
+    )
+    parser.add_argument(
+        "--sg-contrastive-loss-weight",
+        type=float,
+        default=1.0,
+        help="Weight assigned to contrastive loss when training CoCa."
+    )
+    parser.add_argument(
+        "--sg-image-loss-weight",
+        type=float,
+        default=1.0,
+        help="Weight assigned to contrastive loss when training CoCa."
+    )
+    parser.add_argument(
+        "--sg-unimodal-image-loss-weight",
+        type=float,
+        default=1.0,
+        help="Weight assigned to contrastive loss when training CoCa."
+    )
+    parser.add_argument(
+        "--sg-unimodal-caption-loss-weight",
+        type=float,
+        default=1.0,
+        help="Weight assigned to contrastive loss when training CoCa."
+    )
+    parser.add_argument(
         "--remote-sync",
         type=str,
         default=None,
