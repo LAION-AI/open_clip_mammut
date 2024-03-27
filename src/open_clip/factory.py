@@ -14,7 +14,7 @@ from .model import CLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custo
     resize_pos_embed, get_cast_dtype, resize_text_pos_embed, set_model_preprocess_cfg
 from .mammut_model import MaMMUT
 from .coca_model import CoCa
-from .symgen import SymGen, SymGenDecoder
+from .symgen import SymGen
 from .loss import ClipLoss, DistillClipLoss, CoCaLoss, SigLipLoss, SymGenLoss
 from .openai import load_openai_model
 from .pretrained import is_pretrained_cfg, get_pretrained_cfg, download_pretrained,\
@@ -254,8 +254,6 @@ def create_model(
                 model = MaMMUT(**model_cfg, cast_dtype=cast_dtype)  
             elif model_name.startswith("sg"):
                 model = SymGen(**model_cfg, cast_dtype=cast_dtype)
-            elif model_name.startswith("sd"):
-                model = SymGenDecoder(**model_cfg, cast_dtype=cast_dtype)
             else:
                 model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
         else:
