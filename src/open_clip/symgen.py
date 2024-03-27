@@ -224,13 +224,16 @@ class SymGen(nn.Module):
         self.image_decoder.set_grad_checkpointing(enable)
         self.text_decoder.set_grad_checkpointing(enable)
 
-    def _encode_image(self, images, normalize: bool = True):
+    def _encode_image(self, images, normalize: bool = True, return_tokens=False):
         with torch.no_grad():
             images = (images * self.image_std + self.image_mean) if self.image_tokenizer.needs_0_1 else images
             image_tokens = self.image_tokenizer.tokenize(images)
         image_latent, tokens_embs = self.visual(image_tokens)
         image_latent = F.normalize(image_latent, dim=-1) if normalize else image_latent
-        return image_latent, tokens_embs, image_tokens
+        if return_tokens:
+            return image_latent, tokens_embs, image_tokens
+        else:
+            return image_latent, tokens_embs
 
     def _encode_text(self, text, normalize: bool = True):
         text_latent, token_emb = self.text(text)
@@ -254,7 +257,7 @@ class SymGen(nn.Module):
             image_embs: Optional[torch.Tensor] = None,
     ):
 
-        image_latent, image_embs, image_tokens = self._encode_image(image)
+        image_latent, image_embs, image_tokens = self._encode_image(image, return_tokens=True)
         text_latent, text_embs = self._encode_text(text)
     
         input_image = image_embs[:, 0:-1]
