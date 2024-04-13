@@ -277,15 +277,15 @@ def main(args):
 
     if args.model.startswith("sg") or args.model.startswith("sd"):
         if args.sg_contrastive_loss_weight == 0:
-            model.use_contrastive(False)
+            model._use_contrastive(False)
         if args.sg_image_loss_weight == 0 and args.sg_unimodal_image_loss_weight == 0:
-            model.use_image_decoder(False)
+            model._use_image_decoder(False)
         elif args.sg_unimodal_image_loss_weight == 0:
-            model.use_image_decoder_unimodal(False)
+            model._use_image_decoder_unimodal(False)
         if args.sg_caption_loss_weight == 0 and args.sg_unimodal_caption_loss_weight == 0:
-            model.text_decoder(False)
+            model._use_text_decoder(False)
         elif args.sg_unimodal_caption_loss_weight == 0:
-            model.use_text_decoder_unimodal(False)
+            model._use_text_decoder_unimodal(False)
 
     if args.grad_checkpointing:
         model.set_grad_checkpointing()

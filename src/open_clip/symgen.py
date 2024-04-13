@@ -200,13 +200,13 @@ class SymGen(nn.Module):
         self.register_buffer("image_mean", torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1))
         self.register_buffer("image_std", torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1))
        
-        self.use_contrastive(use_contrastive)
-        self.use_image_decoder(use_image_decoder)
-        self.use_text_decoder(use_text_decoder)
-        self.use_image_decoder_unimodal(use_image_decoder_unimodal)
-        self.use_text_decoder_unimodal(use_text_decoder_unimodal)
+        self._use_contrastive(use_contrastive)
+        self._use_image_decoder(use_image_decoder)
+        self._use_text_decoder(use_text_decoder)
+        self._use_image_decoder_unimodal(use_image_decoder_unimodal)
+        self._use_text_decoder_unimodal(use_text_decoder_unimodal)
 
-    def use_contrastive(self, used):
+    def _use_contrastive(self, used):
         self.use_contrastive = used
         if not used:
             self.text.ln_final.bias.requires_grad = False
@@ -220,20 +220,20 @@ class SymGen(nn.Module):
 
             self.logit_scale.requires_grad = False
     
-    def use_image_decoder(self, used):
+    def _use_image_decoder(self, used):
         self.use_image_decoder = used
         if not used and hasattr(self, "image_decoder"):
             self.image_decoder.requires_grad = False
 
-    def use_text_decoder(self, used):
+    def _use_text_decoder(self, used):
         self.use_text_decoder = used
         if not used and hasattr(self, "text_decoder"):
             self.text_decoder.requires_grad = False
 
-    def use_text_decoder_unimodal(self, used):
+    def _use_text_decoder_unimodal(self, used):
         self.use_unimodal_text = used
 
-    def use_image_decoder_unimodal(self, used):
+    def _use_image_decoder_unimodal(self, used):
         self.use_unimodal_image = used
 
     @torch.jit.ignore
