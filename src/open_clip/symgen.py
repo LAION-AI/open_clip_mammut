@@ -121,6 +121,14 @@ class SymGen(nn.Module):
         image_decoder_cfg: DecoderCfg,
         text_decoder_cfg: DecoderCfg,
         image_tokenizer_cfg: ImageTokenizerCfg,
+        
+        use_contrastive=True,
+        use_image_decoder=True,
+        use_image_decoder_unimodal=True,
+        use_text_decoder=True,
+        use_text_decoder_unimodal=True,
+
+
         quick_gelu: bool = False,
         init_logit_scale: float = np.log(1 / 0.07),
         init_logit_bias: Optional[float] = None,
@@ -133,6 +141,11 @@ class SymGen(nn.Module):
         text_cfg = CLIPTextCfg(**text_cfg) if isinstance(text_cfg, dict) else text_cfg
         image_decoder_cfg = DecoderCfg(**image_decoder_cfg) if isinstance(image_decoder_cfg, dict) else image_decoder_cfg
         text_decoder_cfg = DecoderCfg(**text_decoder_cfg) if isinstance(text_decoder_cfg, dict) else text_decoder_cfg
+
+        
+        self.proj_img = torch.nn.Linear(vision_cfg.width, embed_dim) if vision_cfg.width != embed_dim else torch.nn.Sequential()
+        self.proj_text = torch.nn.Linear(text_cfg.width, embed_dim) if text_cfg.width != embed_dim else torch.nn.Sequential()
+        
         # causal text encoder
         self.text = _build_text_tower(
             embed_dim=embed_dim,
@@ -161,21 +174,23 @@ class SymGen(nn.Module):
                 output_dim=embed_dim,
             )
         # causal text decoder
-        self.text_decoder = _build_decoder_tower(
-            decoder_cfg=text_decoder_cfg,
-            quick_gelu=quick_gelu,
-            cast_dtype=cast_dtype,
-            discrete=False,
-            input_dim=embed_dim,
-        )
+        if use_text_decoder or use_text_decoder_unimodal: 
+            self.text_decoder = _build_decoder_tower(
+                decoder_cfg=text_decoder_cfg,
+                quick_gelu=quick_gelu,
+                cast_dtype=cast_dtype,
+                discrete=False,
+                input_dim=embed_dim,
+            )
         # causal image decoder
-        self.image_decoder = _build_decoder_tower(
-            decoder_cfg=image_decoder_cfg,
-            quick_gelu=quick_gelu,
-            cast_dtype=cast_dtype,
-            discrete=False,
-            input_dim=embed_dim,
-        )
+        if use_image_decoder or use_image_decoder_unimodal:
+            self.image_decoder = _build_decoder_tower(
+                decoder_cfg=image_decoder_cfg,
+                quick_gelu=quick_gelu,
+                cast_dtype=cast_dtype,
+                discrete=False,
+                input_dim=embed_dim,
+            )
         self.logit_scale = nn.Parameter(torch.ones([]) * init_logit_scale)
         if init_logit_bias is not None:
             self.logit_bias = nn.Parameter(torch.ones([]) * init_logit_bias)
@@ -184,38 +199,42 @@ class SymGen(nn.Module):
         self.pad_id = pad_id
         self.register_buffer("image_mean", torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1))
         self.register_buffer("image_std", torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1))
-        self.use_contrastive = True
-        self.use_image_decoder = True
-        self.use_text_decoder = True
-        self.use_unimodal_image = True
-        self.use_unimodal_text = True
-            
-    def no_contrastive(self):
-        self.text.ln_final.bias.requires_grad = False
-        self.text.ln_final.weight.requires_grad = False
-        self.text.text_projection.requires_grad = False
+       
+        self.use_contrastive(use_contrastive)
+        self.use_image_decoder(use_image_decoder)
+        self.use_text_decoder(use_text_decoder)
+        self.use_image_decoder_unimodal(use_image_decoder_unimodal)
+        self.use_text_decoder_unimodal(use_text_decoder_unimodal)
 
-        self.visual.ln_final.bias.requires_grad = False
-        self.visual.ln_final.weight.requires_grad = False
-        self.visual.text_projection.requires_grad = False
-        self.visual.cls_emb.requires_grad = False
+    def use_contrastive(self, used):
+        self.use_contrastive = used
+        if not used:
+            self.text.ln_final.bias.requires_grad = False
+            self.text.ln_final.weight.requires_grad = False
+            self.text.text_projection.requires_grad = False
 
-        self.logit_scale.requires_grad = False
-        self.use_contrastive = False
+            self.visual.ln_final.bias.requires_grad = False
+            self.visual.ln_final.weight.requires_grad = False
+            self.visual.text_projection.requires_grad = False
+            self.visual.cls_emb.requires_grad = False
+
+            self.logit_scale.requires_grad = False
     
-    def no_image_decoder(self):
-        self.image_decoder.requires_grad = False
-        self.use_image_decoder = False
+    def use_image_decoder(self, used):
+        self.use_image_decoder = used
+        if not used and hasattr(self, "image_decoder"):
+            self.image_decoder.requires_grad = False
 
-    def no_text_decoder(self):
-        self.text_decoder.requires_grad = False
-        self.use_text_decoder = False
+    def use_text_decoder(self, used):
+        self.use_text_decoder = used
+        if not used and hasattr(self, "text_decoder"):
+            self.text_decoder.requires_grad = False
 
-    def no_unimodal_text(self):
-        self.use_unimodal_text = False
+    def use_text_decoder_unimodal(self, used):
+        self.use_unimodal_text = used
 
-    def no_unimodal_image(self):
-        self.use_unimodal_image = False
+    def use_image_decoder_unimodal(self, used):
+        self.use_unimodal_image = used
 
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable: bool = True):
@@ -229,6 +248,7 @@ class SymGen(nn.Module):
             images = (images * self.image_std + self.image_mean) if self.image_tokenizer.needs_0_1 else images
             image_tokens = self.image_tokenizer.tokenize(images)
         image_latent, tokens_embs = self.visual(image_tokens)
+        tokens_embs = self.proj_img(tokens_embs)
         image_latent = F.normalize(image_latent, dim=-1) if normalize else image_latent
         if return_tokens:
             return image_latent, tokens_embs, image_tokens
@@ -237,6 +257,7 @@ class SymGen(nn.Module):
 
     def _encode_text(self, text, normalize: bool = True):
         text_latent, token_emb = self.text(text)
+        token_em = self.proj_text(token_emb)
         text_latent = F.normalize(text_latent, dim=-1) if normalize else text_latent
         return text_latent, token_emb
 

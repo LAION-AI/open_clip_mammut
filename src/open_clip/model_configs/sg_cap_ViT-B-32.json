@@ -1,28 +1,35 @@
 {
-    "embed_dim": 512,
+    "embed_dim": 256,
+    
+    "use_contrastive": false,
+    "use_image_decoder": false,
+    "use_image_decoder_unimodal": false,
+    "use_text_decoder": true,
+    "use_text_decoder_unimodal": true,
+
     "image_tokenizer_cfg":{
         "name": "image_patch",
         "patch_size": 32,
         "normalize": true
     },
     "vision_cfg": {
-        "width": 512,
+        "width": 768,
         "heads": 8,
         "layers": 12
     },
     "text_cfg": {
-        "context_length": 76,
+        "context_length": 77,
         "vocab_size": 49408,
-        "width": 512,
+        "width": 256,
         "heads": 8,
-        "layers": 12,
+        "layers": 6,
         "embed_cls": true,
         "output_tokens": true
     },
     "text_decoder_cfg": {
-        "context_length": 76,
+        "context_length": 78,
         "vocab_size": 49408,
-        "width": 512,
+        "width": 256,
         "heads": 8,
         "layers": 6,
         "output_dim": 49408
@@ -31,7 +38,7 @@
         "context_length": 49,
         "vocab_size": 3072,
         "output_dim": 3072,
-        "width": 512,
+        "width": 256,
         "heads": 8,
         "layers": 6
     },
