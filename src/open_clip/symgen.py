@@ -240,8 +240,10 @@ class SymGen(nn.Module):
     def set_grad_checkpointing(self, enable: bool = True):
         self.visual.set_grad_checkpointing(enable)
         self.text.set_grad_checkpointing(enable)
-        self.image_decoder.set_grad_checkpointing(enable)
-        self.text_decoder.set_grad_checkpointing(enable)
+        if hasattr(self, "image_decoder"):
+            self.image_decoder.set_grad_checkpointing(enable)
+        if hasattr(self, "text_decoder"):
+            self.text_decoder.set_grad_checkpointing(enable)
 
     def _encode_image(self, images, normalize: bool = True, return_tokens=False):
         with torch.no_grad():
