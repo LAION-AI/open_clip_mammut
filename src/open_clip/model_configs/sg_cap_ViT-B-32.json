@@ -1,5 +1,5 @@
 {
-    "embed_dim": 224,
+    "embed_dim": 512,
     
     "use_contrastive": false,
     "use_image_decoder": false,
@@ -20,7 +20,7 @@
     "text_cfg": {
         "context_length": 77,
         "vocab_size": 49408,
-        "width": 224,
+        "width": 512,
         "heads": 8,
         "layers": 6,
         "embed_cls": true,
@@ -29,7 +29,7 @@
     "text_decoder_cfg": {
         "context_length": 78,
         "vocab_size": 49408,
-        "width": 224,
+        "width": 512,
         "heads": 8,
         "layers": 6,
         "output_dim": 49408
