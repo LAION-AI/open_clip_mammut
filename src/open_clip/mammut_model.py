@@ -94,7 +94,6 @@ class MaMMUT(nn.Module, Generator):
         )
         return token_logits, text_latent
 
-
     def encode_text(
         self,
         text,
@@ -141,10 +140,10 @@ class MaMMUT(nn.Module, Generator):
 
         return out
 
-    def forward(self, image, text=None, image_latent=None, image_embs=None, is_training=True):
+    def forward(self, image=None, text=None, image_latent=None, image_embs=None, is_training=True):
         out = {"logit_scale": self.logit_scale.exp()}
 
-        if image_latent is None or image_embs is None:
+        if (image_latent is None or image_embs is None) and image is not None:
             image_latent, image_embs = self._encode_image(image)
 
         out["image_features"] = image_latent
