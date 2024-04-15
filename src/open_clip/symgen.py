@@ -259,7 +259,7 @@ class SymGen(nn.Module):
 
     def _encode_text(self, text, normalize: bool = True):
         text_latent, token_emb = self.text(text)
-        token_em = self.proj_text(token_emb)
+        token_emb = self.proj_text(token_emb)
         text_latent = F.normalize(text_latent, dim=-1) if normalize else text_latent
         return text_latent, token_emb
 
@@ -273,23 +273,25 @@ class SymGen(nn.Module):
 
     def forward(
             self,
-            image,
+            image=None,
             text: Optional[torch.Tensor] = None,
-            image_tokens: Optional[torch.Tensor] = None,
             image_latent: Optional[torch.Tensor] = None,
             image_embs: Optional[torch.Tensor] = None,
+            image_tokens: Optional[torch.Tensor] = None,
     ):
+        
+        if image is not None and (image_embs is None or (image_latent is None and self.use_contrastive) or (image_tokens is None and self.use_image_decoder)):
+            image_latent, image_embs, image_tokens = self._encode_image(image, return_tokens=True)
+        else:
+            image_latent = None
+            image_embs = None
+            image_tokens = None
 
-        image_latent, image_embs, image_tokens = self._encode_image(image, return_tokens=True)
         text_latent, text_embs = self._encode_text(text)
-    
-        input_image = image_embs[:, 0:-1]
-        labels_image = image_tokens[:, 1:]
-
-        input_text = text_embs[:, 0:-1]
-        labels_text = text[:, 1:]
 
         if self.use_text_decoder:
+            input_text = text_embs[:, 0:-1]
+            labels_text = text[:, 1:]
             logits_text = self.text_decoder(image_embs, input_text)
             if self.use_unimodal_text:
                 logits_text_unimodal = self.text_decoder(None, input_text)
@@ -298,8 +300,11 @@ class SymGen(nn.Module):
         else:
             logits_text = None
             logits_text_unimodal = None
+            labels_text = None
 
         if self.use_image_decoder:
+            input_image = image_embs[:, 0:-1]
+            labels_image = image_tokens[:, 1:]
             logits_image = self.image_decoder(text_embs, input_image)
 
             if self.use_unimodal_image:
@@ -309,6 +314,7 @@ class SymGen(nn.Module):
         else:
             logits_image = None
             logits_image_unimodal = None
+            labels_image = None
         
         out_dict = {
             "image_features": image_latent,
