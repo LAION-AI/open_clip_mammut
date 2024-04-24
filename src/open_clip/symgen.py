@@ -282,10 +282,6 @@ class SymGen(nn.Module):
         
         if image is not None and (image_embs is None or (image_latent is None and self.use_contrastive) or (image_tokens is None and self.use_image_decoder)):
             image_latent, image_embs, image_tokens = self._encode_image(image, return_tokens=True)
-        else:
-            image_latent = None
-            image_embs = None
-            image_tokens = None
 
         text_latent, text_embs = self._encode_text(text)
 
