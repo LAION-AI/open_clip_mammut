@@ -128,7 +128,7 @@ class MaMMUT(nn.Module, Generator):
         if not used:
             self.text.ln_final.bias.requires_grad = False
             self.text.ln_final.weight.requires_grad = False
-            self.text.text_projection.requires_grad = False
+            # self.text.text_projection.requires_grad = False
 
             # self.visual.ln_final.bias.requires_grad = False
             # self.visual.ln_final.weight.requires_grad = False
