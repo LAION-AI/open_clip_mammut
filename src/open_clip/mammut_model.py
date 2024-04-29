@@ -81,6 +81,7 @@ class MaMMUT(nn.Module, Generator):
         self.map_viz2txt_kv = nn.Parameter(torch.randn(vision_cfg.width, multimodal_cfg.width))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         self.pad_id = pad_id
+        self.use_contrastive = True
 
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
@@ -121,6 +122,22 @@ class MaMMUT(nn.Module, Generator):
     def encode_image(self, image, normalize: bool=True):
         image_latent, _ = self._encode_image(image, normalize=normalize)
         return image_latent
+    
+    def _use_contrastive(self, used):
+        self.use_contrastive = used
+        if not used:
+            self.text.ln_final.bias.requires_grad = False
+            self.text.ln_final.weight.requires_grad = False
+            self.text.text_projection.requires_grad = False
+
+            # self.visual.ln_final.bias.requires_grad = False
+            # self.visual.ln_final.weight.requires_grad = False
+            # self.visual.text_projection.requires_grad = False
+            # self.visual.cls_emb.requires_grad = False
+            self.visual.proj.requires_grad = False
+            self.visual.ln_post.bias.requires_grad = False
+            self.visual.ln_post.weight.requires_grad = False
+            self.logit_scale.requires_grad = False
 
     def _forward(self, text, out, image_embs=None, contrastive=True, is_training=True):
 
@@ -130,7 +147,8 @@ class MaMMUT(nn.Module, Generator):
             return out
 
         # adjust image output size for cross_attn
-        image_embs = image_embs @ self.map_viz2txt_kv
+        if image_embs is not None:
+            image_embs = image_embs @ self.map_viz2txt_kv
 
         # TODO: add assertion to avoid bugs?
         out["labels"] = text[:, 1:]  # shift labels
@@ -151,8 +169,10 @@ class MaMMUT(nn.Module, Generator):
         if text is None:
             return out
 
-        if is_training:
+        if is_training and self.use_contrastive:
             out = self._forward(text=text, out=out)
+        else:
+            out["text_features"] = None
 
         out = self._forward(
             text=text,

@@ -286,6 +286,10 @@ def main(args):
             model._use_text_decoder(False)
         elif args.sg_unimodal_caption_loss_weight == 0:
             model._use_text_decoder_unimodal(False)
+    
+    if args.model.startswith("mammut"):
+        if args.coca_contrastive_loss_weight == 0:
+            model._use_contrastive(False)
 
     if args.grad_checkpointing:
         model.set_grad_checkpointing()
