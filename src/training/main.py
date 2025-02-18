@@ -286,7 +286,14 @@ def main(args):
             model._use_text_decoder(False)
         elif args.sg_unimodal_caption_loss_weight == 0:
             model._use_text_decoder_unimodal(False)
-    
+        
+        if args.sg_contrastive_loss_weight == 0 and args.sg_caption_loss_weight == 0:
+            model.visual.requires_grad_(False)
+
+        if args.sg_unimodal_caption_loss_weight != 0 and args.sg_caption_loss_weight == 0:
+            model.text_decoder.cross_attn.requires_grad_(False)
+            model.proj_img.requires_grad_(False)
+
     if args.model.startswith("mammut"):
         if args.coca_contrastive_loss_weight == 0:
             model._use_contrastive(False)
