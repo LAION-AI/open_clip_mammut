@@ -70,7 +70,7 @@ def basic_clean(text):
 
 
 def whitespace_clean(text):
-    text = re.sub(r'\s+', ' ', text)
+    text = " ".join(text.split())
     text = text.strip()
     return text
 
@@ -101,7 +101,12 @@ def get_clean_fn(type: str):
         assert False, f"Invalid clean function ({type})."
 
 
-def canonicalize_text(text, *, keep_punctuation_exact_string=None):
+def canonicalize_text(
+    text,
+    *,
+    keep_punctuation_exact_string=None,
+    trans_punctuation: dict = str.maketrans("", "", string.punctuation),
+):
     """Returns canonicalized `text` (lowercase and punctuation removed).
 
     From: https://github.com/google-research/big_vision/blob/53f18caf27a9419231bbf08d3388b07671616d3d/big_vision/evaluators/proj/image_text/prompt_engineering.py#L94
@@ -115,12 +120,13 @@ def canonicalize_text(text, *, keep_punctuation_exact_string=None):
     text = text.replace("_", " ")
     if keep_punctuation_exact_string:
         text = keep_punctuation_exact_string.join(
-            part.translate(str.maketrans("", "", string.punctuation))
-            for part in text.split(keep_punctuation_exact_string))
+            part.translate(trans_punctuation)
+            for part in text.split(keep_punctuation_exact_string)
+        )
     else:
-        text = text.translate(str.maketrans("", "", string.punctuation))
+        text = text.translate(trans_punctuation)
     text = text.lower()
-    text = re.sub(r"\s+", " ", text)
+    text = " ".join(text.split())
     return text.strip()
 
 
@@ -184,7 +190,7 @@ class SimpleTokenizer(object):
                     j = word.index(first, i)
                     new_word.extend(word[i:j])
                     i = j
-                except:
+                except Exception:
                     new_word.extend(word[i:])
                     break
 
@@ -404,9 +410,11 @@ class HFTokenizer:
             clean: str = 'whitespace',
             strip_sep_token: bool = False,
             language: Optional[str] = None,
+            cache_dir: Optional[str] = None,
+            **kwargs
     ):
         from transformers import AutoTokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=cache_dir, **kwargs)
         set_lang_fn = getattr(self.tokenizer, 'set_src_lang_special_tokens', None)
         if callable(set_lang_fn):
             self.set_lang_fn = set_lang_fn
@@ -455,6 +463,9 @@ class HFTokenizer:
 
 class SigLipTokenizer:
     """HuggingFace tokenizer wrapper for SigLIP T5 compatible sentencepiece vocabs
+
+    NOTE: this is not needed in normal library use, but is used to import new sentencepiece tokenizers
+    into OpenCLIP. Leaving code here in case future models use new tokenizers.
     """
     VOCAB_FILES = {
         # english, vocab_size=32_000

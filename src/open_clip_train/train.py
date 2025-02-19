@@ -15,9 +15,9 @@ except ImportError:
     wandb = None
 
 from open_clip import get_input_dtype, CLIP, CustomTextCLIP
-from .distributed import is_master
-from .zero_shot import zero_shot_eval
-from .precision import get_autocast
+from open_clip_train.distributed import is_master
+from open_clip_train.zero_shot import zero_shot_eval
+from open_clip_train.precision import get_autocast
 
 
 class AverageMeter(object):
@@ -63,7 +63,7 @@ def backward(total_loss, scaler):
 
 def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist_model, args, tb_writer=None):
     device = torch.device(args.device)
-    autocast = get_autocast(args.precision)
+    autocast = get_autocast(args.precision, device_type=device.type)
     input_dtype = get_input_dtype(args.precision)
 
     model.train()
@@ -259,7 +259,7 @@ def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None):
     zero_shot_metrics = zero_shot_eval(model, data, epoch, args, tokenizer=tokenizer)
     metrics.update(zero_shot_metrics)
 
-    autocast = get_autocast(args.precision)
+    autocast = get_autocast(args.precision, device_type=device.type)
     input_dtype = get_input_dtype(args.precision)
 
     if 'val' in data and (args.val_frequency and ((epoch % args.val_frequency) == 0 or epoch == args.epochs)):
@@ -272,7 +272,7 @@ def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None):
         cumulative_loss = 0.0
         cumulative_gen_loss = 0.0
         all_image_features, all_text_features = [], []
-        with torch.no_grad():
+        with torch.inference_mode():
             for i, batch in enumerate(dataloader):
                 images, texts = batch
                 images = images.to(device=device, dtype=input_dtype, non_blocking=True)

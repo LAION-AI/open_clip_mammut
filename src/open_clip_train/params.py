@@ -102,6 +102,12 @@ def parse_args(args):
         help="Path to imagenet v2 for conducting zero shot evaluation.",
     )
     parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Override system default cache path for model & tokenizer file downloads.",
+    )
+    parser.add_argument(
         "--logs",
         type=str,
         default="./logs/",
@@ -137,8 +143,13 @@ def parse_args(args):
     parser.add_argument("--beta2", type=float, default=None, help="Adam beta 2.")
     parser.add_argument("--eps", type=float, default=None, help="Adam epsilon.")
     parser.add_argument("--wd", type=float, default=0.2, help="Weight decay.")
+    parser.add_argument("--momentum", type=float, default=None, help="Momentum (for timm optimizers).")
     parser.add_argument(
         "--warmup", type=int, default=10000, help="Number of steps to warmup for."
+    )
+    parser.add_argument(
+        "--opt", type=str, default='adamw',
+        help="Which optimizer to use. Choices are ['adamw', or any timm optimizer 'timm/{opt_name}']."
     )
     parser.add_argument(
         "--use-bn-sync",
@@ -306,15 +317,21 @@ def parse_args(args):
     parser.add_argument(
         "--accum-freq", type=int, default=1, help="Update the model every --acum-freq steps."
     )
+    parser.add_argument(
+        "--device", default="cuda", type=str, help="Accelerator to use."
+    )
     # arguments for distributed training
     parser.add_argument(
         "--dist-url",
-        default="env://",
+        default=None,
         type=str,
         help="url used to set up distributed training",
     )
     parser.add_argument(
-        "--dist-backend", default="nccl", type=str, help="distributed backend"
+        "--dist-backend",
+        default=None,
+        type=str,
+        help="distributed backend. \"nccl\" for GPU, \"hccl\" for Ascend NPU"
     )
     parser.add_argument(
         "--report-to",
@@ -482,13 +499,20 @@ def parse_args(args):
         action="store_true",
         help='Use SigLip (sigmoid) loss.'
     )
+    parser.add_argument(
+        "--loss-dist-impl",
+        default=None,
+        type=str,
+        help='A string to specify a specific distributed loss implementation.'
+    )
 
     args = parser.parse_args(args)
 
-    # If some params are not passed, we use the default values based on model name.
-    default_params = get_default_params(args.model)
-    for name, val in default_params.items():
-        if getattr(args, name) is None:
-            setattr(args, name, val)
+    if 'timm' not in args.opt:
+        # set default opt params based on model name (only if timm optimizer not used)
+        default_params = get_default_params(args.model)
+        for name, val in default_params.items():
+            if getattr(args, name) is None:
+                setattr(args, name, val)
 
     return args

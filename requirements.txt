@@ -4,6 +4,5 @@ regex
 ftfy
 tqdm
 huggingface_hub
-sentencepiece
-protobuf
+safetensors
 timm
