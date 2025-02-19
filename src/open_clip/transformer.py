@@ -859,6 +859,7 @@ class MultimodalTransformer(nn.Module):
             vocab_size: int = 49408,
             output_tokens: bool = False,
             has_mlp: bool = True,
+            batch_first=True,
     ):
 
         super().__init__()
@@ -867,6 +868,7 @@ class MultimodalTransformer(nn.Module):
         self.layers = layers
         self.grad_checkpointing = False
         self.context_length = context_length
+        self.batch_first = batch_first
 
         n_cross_attn, _ = divmod(layers, cross_attn_ratio)
         self.cross_step, _ = divmod(layers, n_cross_attn)
@@ -888,6 +890,7 @@ class MultimodalTransformer(nn.Module):
                     act_layer=act_layer,
                     norm_layer=norm_layer,
                     has_mlp=(not has_cross_attn) or has_mlp,
+                    batch_first=batch_first,
                 )
             )
 
@@ -901,6 +904,7 @@ class MultimodalTransformer(nn.Module):
                         act_layer=act_layer,
                         norm_layer=norm_layer,
                         is_cross_attention=True,
+                        batch_first=batch_first,
                     )
                 )
 
@@ -955,9 +959,10 @@ class MultimodalTransformer(nn.Module):
             text_embs = self.token_embedding(text_embs).to(cast_dtype)  # [batch_size, n_ctx, d_model]
             text_embs = text_embs + self.positional_embedding[:seq_len].to(cast_dtype)
 
-        text_embs = text_embs.permute(1, 0, 2)  # NLD -> LND
-        if image_embs is not None:
-            image_embs = image_embs.permute(1, 0, 2)  # NLD -> LND
+        if not self.batch_first:
+            text_embs = text_embs.permute(1, 0, 2)  # NLD -> LND
+            if image_embs is not None:
+                image_embs = image_embs.permute(1, 0, 2)  # NLD -> LND
 
         # TODO: handle different cases better, currently
         # differentiates coca from mammut based on image_embs
@@ -985,8 +990,9 @@ class MultimodalTransformer(nn.Module):
 
         assert cross_attn_idx == len(self.cross_attn) - 1, "some cross attentions are being skipped"
 
-        x = text_embs.permute(1, 0, 2)  # LND -> NLD
-        x = self.ln_final(x)
+        if not self.batch_first:
+            text_embs = text_embs.permute(1, 0, 2)  # LND -> NLD
+        x = self.ln_final(text_embs)
 
         if self.text_projection is not None:
             logits = x @ self.text_projection
@@ -999,263 +1005,3 @@ class MultimodalTransformer(nn.Module):
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
         self.grad_checkpointing = enable
-
-class MultimodalDecoder(Transformer):
-    def __init__(
-            self,
-            width: int,
-            layers: int,
-            heads: int,
-            context_length: int = 77,
-            mlp_ratio: float = 4.0,
-            ls_init_value: float = None,
-            act_layer: Callable = nn.GELU,
-            norm_layer: Callable = LayerNorm,
-            output_dim: int = 512,
-            causal=True,
-            vocab_size: int = 49408,
-            discrete_input=True,
-            input_dim=None,#only for discrete input is False
-    ):
-
-        super().__init__(
-            width=width,
-            layers=layers,
-            heads=heads,
-            mlp_ratio=mlp_ratio,
-            ls_init_value=ls_init_value,
-            act_layer=act_layer,
-            norm_layer=norm_layer,
-        )
-        self.context_length =context_length
-        
-        self.cross_attn = nn.ModuleList([
-            ResidualAttentionBlock(
-                width,
-                heads,
-                mlp_ratio,
-                ls_init_value=ls_init_value,
-                act_layer=act_layer,
-                norm_layer=norm_layer,
-                is_cross_attention=True,
-            )
-            for _ in range(layers)
-        ])
-        
-        self.register_buffer('attn_mask', self.build_attention_mask(causal=True, context_length=self.context_length), persistent=False)
-        self.ln_final = norm_layer(width)
-        self.text_projection = nn.Parameter(torch.empty(width, output_dim))
-        if discrete_input:
-            self.token_embedding = nn.Embedding(vocab_size, width)
-        else:
-            self.token_embedding = nn.Linear(input_dim, width)
-
-        self.num_pos = self.context_length
-        self.positional_embedding = nn.Parameter(torch.empty(self.num_pos, width))
-        self.causal = causal
-        self.discrete_input = discrete_input
-
-    def init_parameters(self):
-        proj_std = (self.transformer.width ** -0.5) * ((2 * self.transformer.layers) ** -0.5)
-        attn_std = self.transformer.width ** -0.5
-        fc_std = (2 * self.transformer.width) ** -0.5
-        for block in self.transformer.resblocks:
-            nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
-            nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
-            nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
-            nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
-        for block in self.transformer.cross_attn:
-            nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
-            nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
-            nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
-            nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
-
-        if self.text_projection is not None:
-            nn.init.normal_(self.text_projection, std=self.transformer.width ** -0.5)
-
-    def build_attention_mask(self, causal=True, context_length=77):
-        # lazily create causal attention mask, with full attention between the tokens
-        # pytorch uses additive attention mask; fill with -inf
-        mask = torch.empty(context_length, context_length)
-        if causal:
-            mask.fill_(float("-inf"))
-            mask.triu_(1)  # zero out the lower diagonal
-        else:
-            mask.fill_(0)
-        return mask
-
-    def forward(self, image_embs, text):
-        seq_len = text.shape[1]
-        text_embs = self.token_embedding(text)        
-        text_embs = text_embs + self.positional_embedding[:seq_len]
-        text_embs = text_embs.permute(1, 0, 2)  # NLD -> LNDsq
-        
-        if image_embs is not None:
-            image_embs = image_embs.permute(1, 0, 2)  # NLD -> LND
-        
-        seq_len = text_embs.shape[0]
-        
-        attn_mask = self.attn_mask
-        for resblock, cross_attn in zip(self.resblocks, self.cross_attn):
-            #print("SHAPE", text_embs.shape, image_embs.shape, attn_mask[:seq_len, :seq_len].shape)
-            if self.grad_checkpointing and not torch.jit.is_scripting():
-                # TODO: handle kwargs https://github.com/pytorch/pytorch/issues/79887#issuecomment-1161758372
-                text_embs = checkpoint(resblock, text_embs, None, None, attn_mask[:seq_len, :seq_len])
-                if image_embs is not None:
-                    text_embs = checkpoint(cross_attn, text_embs, image_embs, image_embs, None)
-            else:
-                text_embs = resblock(text_embs, attn_mask=attn_mask[:seq_len, :seq_len])
-                if image_embs is not None:
-                    text_embs = cross_attn(text_embs, k_x=image_embs, v_x=image_embs)
-
-        x = text_embs.permute(1, 0, 2)  # LND -> NLD
-        x = self.ln_final(x)
-
-        if self.text_projection is not None:
-            x = x @ self.text_projection
-
-        return x
-
-    @torch.jit.ignore
-    def set_grad_checkpointing(self, enable=True):
-        self.grad_checkpointing = enable
-
-
-class ContinuousTransformer(nn.Module):
-    output_tokens: torch.jit.Final[bool]
-
-    def __init__(
-            self,
-            input_dim=512,
-            context_length: int = 77,
-            width: int = 512,
-            heads: int = 8,
-            layers: int = 12,
-            mlp_ratio: float = 4.0,
-            ls_init_value: float = None,
-            output_dim: int = 512,
-            embed_cls: bool = False,
-            no_causal_mask: bool = False,
-            pool_type: str = 'argmax',
-            proj_bias: bool = False,
-            act_layer: Callable = nn.GELU,
-            norm_layer: Callable = LayerNorm,
-            output_tokens: bool = False,
-    ):
-        super().__init__()
-        assert pool_type in ('first', 'last', 'argmax', 'none')
-        self.output_tokens = output_tokens
-        self.num_pos = self.context_length = context_length
-        self.width = width
-        self.output_dim = output_dim
-        self.heads = heads
-        self.pool_type = pool_type
-        self.token_embedding = nn.Linear(input_dim, width)
-        if embed_cls:
-            self.cls_emb = nn.Parameter(torch.empty(width))
-            self.num_pos += 1
-        else:
-            self.cls_emb = None
-        self.positional_embedding = nn.Parameter(torch.empty(self.num_pos, width))
-        self.transformer = Transformer(
-            width=width,
-            layers=layers,
-            heads=heads,
-            mlp_ratio=mlp_ratio,
-            ls_init_value=ls_init_value,
-            act_layer=act_layer,
-            norm_layer=norm_layer,
-        )
-        self.ln_final = norm_layer(width)
-
-        if no_causal_mask:
-            self.attn_mask = None
-        else:
-            self.register_buffer('attn_mask', self.build_causal_mask(), persistent=False)
-
-        if proj_type == 'none' or not output_dim:
-            self.text_projection = None
-        else:
-            if proj_bias:
-                self.text_projection = nn.Linear(width, output_dim)
-            else:
-                self.text_projection = nn.Parameter(torch.empty(width, output_dim))
-
-        self.init_parameters()
-
-    def init_parameters(self):
-        nn.init.normal_(self.token_embedding.weight, std=0.02)
-        nn.init.normal_(self.positional_embedding, std=0.01)
-        if self.cls_emb is not None:
-            nn.init.normal_(self.cls_emb, std=0.01)
-
-        proj_std = (self.transformer.width ** -0.5) * ((2 * self.transformer.layers) ** -0.5)
-        attn_std = self.transformer.width ** -0.5
-        fc_std = (2 * self.transformer.width) ** -0.5
-        for block in self.transformer.resblocks:
-            nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
-            nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
-            nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
-            nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
-
-        if self.text_projection is not None:
-            if isinstance(self.text_projection, nn.Linear):
-                nn.init.normal_(self.text_projection.weight, std=self.transformer.width ** -0.5)
-                if self.text_projection.bias is not None:
-                    nn.init.zeros_(self.text_projection.bias)
-            else:
-                nn.init.normal_(self.text_projection, std=self.transformer.width ** -0.5)
-
-    @torch.jit.ignore
-    def set_grad_checkpointing(self, enable=True):
-        self.transformer.grad_checkpointing = enable
-
-    @torch.jit.ignore
-    def no_weight_decay(self):
-        # for timm optimizers, 1d params like logit_scale, logit_bias, ln/bn scale, biases are excluded by default
-        no_wd = {'positional_embedding'}
-        if self.cls_emb is not None:
-            no_wd.add('cls_emb')
-        return no_wd
-
-    def build_causal_mask(self):
-        # lazily create causal attention mask, with full attention between the tokens
-        # pytorch uses additive attention mask; fill with -inf
-        mask = torch.empty(self.num_pos, self.num_pos)
-        mask.fill_(float("-inf"))
-        mask.triu_(1)  # zero out the lower diagonal
-        return mask
-
-    def forward(self, text):
-        cast_dtype = self.transformer.get_cast_dtype()
-        seq_len = text.shape[1]
-
-        x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
-        attn_mask = self.attn_mask
-
-        if self.cls_emb is not None:
-            seq_len += 1
-            x = torch.cat([x, _expand_token(self.cls_emb, x.shape[0])], dim=1)
-
-        x = x + self.positional_embedding[:seq_len].to(cast_dtype)
-        x = self.transformer(x, attn_mask=attn_mask)
-
-        # x.shape = [batch_size, n_ctx, transformer.width]
-        if self.cls_emb is not None:
-            # presence of appended cls embed (CoCa) overrides pool_type, always take last token
-            pooled, tokens = text_global_pool(x, pool_type='last')
-            pooled = self.ln_final(pooled)  # final LN applied after pooling in this case
-        else:
-            x = self.ln_final(x)
-            pooled, tokens = text_global_pool(x, text, pool_type=self.pool_type)
-
-        if self.text_projection is not None:
-            if isinstance(self.text_projection, nn.Linear):
-                pooled = self.text_projection(pooled)
-            else:
-                pooled = pooled @ self.text_projection
-
-        if self.output_tokens:
-            return pooled, tokens
-
-        return pooled

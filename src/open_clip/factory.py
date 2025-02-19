@@ -1,3 +1,4 @@
+import pickle   
 import json
 import logging
 import os
@@ -154,7 +155,7 @@ def load_state_dict(
     else:
         try:
             checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=weights_only)
-        except TypeError:
+        except (TypeError, pickle.UnpicklingError):
             checkpoint = torch.load(checkpoint_path, map_location=device)
 
     if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
