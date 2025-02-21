@@ -72,6 +72,7 @@ class CLIPTextCfg:
     final_ln_after_pool: bool = False  # apply final LayerNorm after pooling
     pool_type: str = 'argmax'
     proj_bias: bool = False
+    proj_type: str = 'linear'  # control final text projection, 'none' forces no projection
     output_tokens: bool = False
     act_kwargs: dict = None
     norm_kwargs: dict = None
@@ -213,6 +214,7 @@ def _build_text_tower(
             output_tokens=text_cfg.output_tokens,
             pad_id=text_cfg.pad_id,
             pool_type=text_cfg.pool_type,
+            proj_type=text_cfg.proj_type,
             proj_bias=text_cfg.proj_bias,
             act_layer=act_layer,
             norm_layer=norm_layer,
@@ -231,6 +233,7 @@ class CLIP(nn.Module):
             quick_gelu: bool = False,
             init_logit_scale: float = np.log(1 / 0.07),
             init_logit_bias: Optional[float] = None,
+            nonscalar_logit_scale: bool = False,
             cast_dtype: Optional[torch.dtype] = None,
             output_dict: bool = False,
     ):
@@ -250,9 +253,10 @@ class CLIP(nn.Module):
         self.text_pool_type = text.pool_type
         self.register_buffer('attn_mask', text.attn_mask, persistent=False)
 
-        self.logit_scale = nn.Parameter(torch.ones([]) * init_logit_scale)
+        lshape = [1] if nonscalar_logit_scale else []
+        self.logit_scale = nn.Parameter(torch.ones(lshape) * init_logit_scale)
         if init_logit_bias is not None:
-            self.logit_bias = nn.Parameter(torch.ones([]) * init_logit_bias)
+            self.logit_bias = nn.Parameter(torch.ones(lshape) * init_logit_bias)
         else:
             self.logit_bias = None
 
@@ -265,6 +269,15 @@ class CLIP(nn.Module):
         self.visual.set_grad_checkpointing(enable)
         self.transformer.grad_checkpointing = enable
 
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        # for timm optimizers, 1d params like logit_scale, logit_bias, ln/bn scale, biases are excluded by default
+        no_wd = {'positional_embedding'}
+        if hasattr(self.visual, 'no_weight_decay'):
+            for n in self.visual.no_weight_decay():
+                no_wd.add('visual.' + n)
+        return no_wd
+
     def encode_image(self, image, normalize: bool = False):
         features = self.visual(image)
         return F.normalize(features, dim=-1) if normalize else features
@@ -275,9 +288,7 @@ class CLIP(nn.Module):
         x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
 
         x = x + self.positional_embedding.to(cast_dtype)
-        x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x, attn_mask=self.attn_mask)
-        x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x)  # [batch_size, n_ctx, transformer.width]
         x, _ = text_global_pool(x, text, self.text_pool_type)
         if self.text_projection is not None:
@@ -331,6 +342,7 @@ class CustomTextCLIP(nn.Module):
             quick_gelu: bool = False,
             init_logit_scale: float = np.log(1 / 0.07),
             init_logit_bias: Optional[float] = None,
+            nonscalar_logit_scale: bool = False,
             cast_dtype: Optional[torch.dtype] = None,
             output_dict: bool = False,
     ):
@@ -340,9 +352,11 @@ class CustomTextCLIP(nn.Module):
         self.text = _build_text_tower(embed_dim, text_cfg, quick_gelu, cast_dtype)
         self.context_length = self.text.context_length
         self.vocab_size = self.text.vocab_size
-        self.logit_scale = nn.Parameter(torch.ones([]) * init_logit_scale)
+
+        lshape = [1] if nonscalar_logit_scale else []
+        self.logit_scale = nn.Parameter(torch.ones(lshape) * init_logit_scale)
         if init_logit_bias is not None:
-            self.logit_bias = nn.Parameter(torch.ones([]) * init_logit_bias)
+            self.logit_bias = nn.Parameter(torch.ones(lshape) * init_logit_bias)
         else:
             self.logit_bias = None
 
@@ -357,6 +371,18 @@ class CustomTextCLIP(nn.Module):
     def set_grad_checkpointing(self, enable=True):
         self.visual.set_grad_checkpointing(enable)
         self.text.set_grad_checkpointing(enable)
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        # for timm optimizers, 1d params like logit_scale, logit_bias, ln/bn scale, biases are excluded by default
+        no_wd = set()
+        if hasattr(self.visual, 'no_weight_decay'):
+            for n in self.visual.no_weight_decay():
+                no_wd.add('visual.' + n)
+        if hasattr(self.text, 'no_weight_decay'):
+            for n in self.visual.no_weight_decay():
+                no_wd.add('text.' + n)
+        return no_wd
 
     def encode_image(self, image, normalize: bool = False):
         features = self.visual(image)

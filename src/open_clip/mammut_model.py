@@ -80,6 +80,7 @@ class MaMMUT(nn.Module, Generator):
         self.context_length = multimodal_cfg.context_length
         self.map_viz2txt_kv = nn.Parameter(torch.randn(vision_cfg.width, multimodal_cfg.width))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.logit_bias = None
         self.pad_id = pad_id
         self.use_contrastive = True
 

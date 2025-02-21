@@ -7,8 +7,9 @@ Welcome to an open source implementation of OpenAI's [CLIP](https://arxiv.org/ab
 
 Using this codebase, we have trained several models on a variety of data sources and compute budgets, ranging from [small-scale experiments](docs/LOW_ACC.md) to larger runs including models trained on datasets such as [LAION-400M](https://arxiv.org/abs/2111.02114), [LAION-2B](https://arxiv.org/abs/2210.08402) and [DataComp-1B](https://arxiv.org/abs/2304.14108).
 Many of our models and their scaling properties are studied in detail in the paper [reproducible scaling laws for contrastive language-image learning](https://arxiv.org/abs/2212.07143).
-Some of our best models and their zero-shot ImageNet-1k accuracy are shown below, along with the ViT-L model trained by OpenAI. 
+Some of the best models we've trained and their zero-shot ImageNet-1k accuracy are shown below, along with the ViT-L model trained by OpenAI and other state-of-the-art open source alternatives (all can be loaded via OpenCLIP).
 We provide more details about our full collection of pretrained models [here](docs/PRETRAINED.md), and zero-shot results for 38 datasets [here](docs/openclip_results.csv).
+
 
 
 | Model    | Training data | Resolution | # of samples seen | ImageNet zero-shot acc. | 
@@ -23,7 +24,12 @@ We provide more details about our full collection of pretrained models [here](do
 | ViT-L/14  | DataComp-1B  | 224px | 13B | 79.2% |
 | ViT-G/14  | LAION-2B  | 224px | 34B | 80.1% |
 |  |  |   |   |  |
-| ViT-L/14 | OpenAI's WIT | 224px | 13B | 75.5% | 
+| ViT-L/14-quickgelu [(Original CLIP)](https://arxiv.org/abs/2103.00020) | WIT | 224px | 13B | 75.5% | 
+| ViT-SO400M/14 [(SigLIP)](https://arxiv.org/abs/2303.15343) | WebLI | 224px | 45B | 82.0% | 
+| ViT-L/14 [(DFN)](https://arxiv.org/abs/2309.17425) | DFN-2B | 224px | 39B | 82.2% | 
+| ViT-SO400M-14-SigLIP-384 [(SigLIP)](https://arxiv.org/abs/2303.15343) |  WebLI | 384px | 45B | 83.1% |
+| ViT-H/14-quickgelu [(DFN)](https://arxiv.org/abs/2309.17425) | DFN-5B | 224px | 39B | 83.4% | 
+| ViT-H-14-378-quickgelu [(DFN)](https://arxiv.org/abs/2309.17425) | DFN-5B | 378px | 44B | 84.4% |
 
 Model cards with additional model specific details can be found on the Hugging Face Hub under the OpenCLIP library tag: https://huggingface.co/models?library=open_clip. 
 
@@ -50,6 +56,7 @@ from PIL import Image
 import open_clip
 
 model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
+model.eval()  # model in train mode by default, impacts some models with BatchNorm or stochastic depth active
 tokenizer = open_clip.get_tokenizer('ViT-B-32')
 
 image = preprocess(Image.open("docs/CLIP.png")).unsqueeze(0)
@@ -163,7 +170,7 @@ Running regression tests against a specific git revision or tag:
 ### Sample single-process running code:
 
 ```bash
-python -m training.main \
+python -m open_clip_train.main \
     --save-frequency 1 \
     --zeroshot-frequency 1 \
     --report-to tensorboard \
@@ -228,7 +235,7 @@ a job on a node of 4 GPUs:
 
 ```bash
 cd open_clip/src
-torchrun --nproc_per_node 4 -m training.main \
+torchrun --nproc_per_node 4 -m open_clip_train.main \
     --train-data '/data/cc12m/cc12m-train-{0000..2175}.tar' \
     --train-num-samples 10968539 \
     --dataset-type webdataset \
@@ -247,7 +254,7 @@ of nodes and host node.
 cd open_clip/src
 torchrun --nproc_per_node=4 \
     --rdzv_endpoint=$HOSTE_NODE_ADDR \
-    -m training.main \
+    -m open_clip_train.main \
     --train-data '/data/cc12m/cc12m-train-{0000..2175}.tar' \
     --train-num-samples 10968539 \
     --dataset-type webdataset \
@@ -283,7 +290,7 @@ export MASTER_ADDR=$master_addr
 
 cd /shared/open_clip
 export PYTHONPATH="$PYTHONPATH:$PWD/src"
-srun --cpu_bind=v --accel-bind=gn python -u src/training/main.py \
+srun --cpu_bind=v --accel-bind=gn python -u src/open_clip_train/main.py \
     --save-frequency 1 \
     --report-to tensorboard \
     --train-data="/data/LAION-400M/{00000..41455}.tar" \
@@ -301,7 +308,7 @@ srun --cpu_bind=v --accel-bind=gn python -u src/training/main.py \
 ### Resuming from a checkpoint:
 
 ```bash
-python -m training.main \
+python -m open_clip_train.main \
     --train-data="/path/to/train_data.csv" \
     --val-data="/path/to/validation_data.csv"  \
     --resume /path/to/checkpoints/epoch_K.pt
@@ -355,7 +362,7 @@ import pandas as pd
 import os
 
 root_path = "path/to/data/dir" # set this to smth meaningful
-ds = build_dataset("mscoco_captions", root=root_path, split="train") # this downloads the dataset if it is not there already
+ds = build_dataset("mscoco_captions", root=root_path, split="train", task="captioning") # this downloads the dataset if it is not there already
 coco = ds.coco
 imgs = coco.loadImgs(coco.getImgIds())
 future_df = {"filepath":[], "title":[]}
@@ -370,7 +377,7 @@ pd.DataFrame.from_dict(future_df).to_csv(
 ```
 This should create a csv dataset that one can use to fine-tune coca with open_clip
 ```bash
-python -m training.main \
+python -m open_clip_train.main \
     --dataset-type "csv" \
     --train-data "path/to/data/dir/train2014.csv" \
     --warmup 1000 \
@@ -386,7 +393,7 @@ python -m training.main \
     --log-every-n-steps 100
 ```
 
-This is a general setting, open_clip has very parameters that can be set, ```python -m training.main --help``` should show them. The only relevant change compared to pre-training are the two arguments
+This is a general setting, open_clip has very parameters that can be set, ```python -m open_clip_train.main --help``` should show them. The only relevant change compared to pre-training are the two arguments
 
 ```bash
 --coca-contrastive-loss-weight 0
@@ -398,7 +405,7 @@ which make the model only train the generative side.
 
 If you wish to use different language models as the text encoder for CLIP you can do so by using one of the Hugging Face model configs in ```src/open_clip/model_configs``` and passing in it's tokenizer as the ```--model``` and ```--hf-tokenizer-name``` parameters respectively. Currently we only support RoBERTa ("test-roberta" config), however adding new models should be trivial. You can also determine how many layers, from the end, to leave unfrozen with the ```--lock-text-unlocked-layers``` parameter. Here's an example command to train CLIP with the RoBERTa LM that has it's last 10 layers unfrozen:
 ```bash
-python -m training.main \
+python -m open_clip_train.main \
          --train-data="pipe:aws s3 cp s3://s-mas/cc3m/{00000..00329}.tar -" \
          --train-num-samples 3000000 \
          --val-data="pipe:aws s3 cp s3://s-mas/cc3m/{00330..00331}.tar -" \
@@ -447,7 +454,7 @@ We recommend https://github.com/LAION-AI/CLIP_benchmark#how-to-use for systemati
 ### Evaluating local checkpoint:
 
 ```bash
-python -m training.main \
+python -m open_clip_train.main \
     --val-data="/path/to/validation_data.csv"  \
     --model RN101 \
     --pretrained /path/to/checkpoints/epoch_K.pt
@@ -456,7 +463,7 @@ python -m training.main \
 ### Evaluating hosted pretrained checkpoint on ImageNet zero-shot prediction:
 
 ```bash
-python -m training.main \
+python -m open_clip_train.main \
     --imagenet-val /path/to/imagenet/validation \
     --model ViT-B-32-quickgelu \
     --pretrained laion400m_e32

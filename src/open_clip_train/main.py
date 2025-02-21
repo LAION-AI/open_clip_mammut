@@ -1,3 +1,4 @@
+import copy
 import glob
 import logging
 import os
@@ -11,7 +12,6 @@ from functools import partial
 import numpy as np
 import torch
 from torch import optim
-from torch.cuda.amp import GradScaler
 
 try:
     import wandb
@@ -29,13 +29,13 @@ except ImportError:
     hvd = None
 
 from open_clip import create_model_and_transforms, trace_model, get_tokenizer, create_loss
-from training.data import get_data
-from training.distributed import is_master, init_distributed_device, broadcast_object
-from training.logger import setup_logging
-from training.params import parse_args
-from training.scheduler import cosine_lr, const_lr, const_lr_cooldown
-from training.train import train_one_epoch, evaluate
-from training.file_utils import pt_load, check_exists, start_sync_process, remote_sync
+from open_clip_train.data import get_data
+from open_clip_train.distributed import is_master, init_distributed_device, broadcast_object
+from open_clip_train.logger import setup_logging
+from open_clip_train.params import parse_args
+from open_clip_train.scheduler import cosine_lr, const_lr, const_lr_cooldown
+from open_clip_train.train import train_one_epoch, evaluate
+from open_clip_train.file_utils import pt_load, check_exists, start_sync_process, remote_sync
 
 
 LATEST_CHECKPOINT_NAME = "epoch_latest.pt"
@@ -237,6 +237,7 @@ def main(args):
         aug_cfg=args.aug_cfg,
         pretrained_image=args.pretrained_image,
         output_dict=True,
+        cache_dir=args.cache_dir,
         **model_kwargs,
     )
     if args.distill:
@@ -247,6 +248,7 @@ def main(args):
             device=device,
             precision=args.precision,
             output_dict=True,
+            cache_dir=args.cache_dir,
         )
     if args.use_bnb_linear is not None:
         print('=> using a layer from bitsandbytes.\n'
@@ -286,7 +288,14 @@ def main(args):
             model._use_text_decoder(False)
         elif args.sg_unimodal_caption_loss_weight == 0:
             model._use_text_decoder_unimodal(False)
-    
+        
+        if args.sg_contrastive_loss_weight == 0 and args.sg_caption_loss_weight == 0:
+            model.visual.requires_grad_(False)
+
+        if args.sg_unimodal_caption_loss_weight != 0 and args.sg_caption_loss_weight == 0:
+            model.text_decoder.cross_attn.requires_grad_(False)
+            model.proj_img.requires_grad_(False)
+
     if args.model.startswith("mammut"):
         if args.coca_contrastive_loss_weight == 0:
             model._use_contrastive(False)
@@ -324,28 +333,67 @@ def main(args):
     if args.train_data or args.dataset_type == "synthetic":
         assert not args.trace, 'Cannot train with traced model'
 
-        exclude = lambda n, p: p.ndim < 2 or "bn" in n or "ln" in n or "bias" in n or 'logit_scale' in n
-        include = lambda n, p: not exclude(n, p)
+        opt = getattr(args, 'opt', 'adamw').lower()
+        if opt.startswith('timm/'):
+            from timm.optim import create_optimizer_v2
+            timm_opt = opt.split('timm/')[-1]
+            opt_kwargs = {}
+            assert (args.beta1 is None) == (args.beta2 is None), \
+                'When using timm optimizer, BOTH beta1 and beta2 must be specified (or not specified).'
+            if args.beta1 is not None:
+                opt_kwargs['betas'] = (args.beta1, args.beta2)
+            if args.momentum is not None:
+                opt_kwargs['momentum'] = args.momentum
+            optimizer = create_optimizer_v2(
+                model,
+                timm_opt,
+                lr=args.lr,
+                weight_decay=args.wd,
+                eps=args.eps,
+                **opt_kwargs,
+            )
+        else:
+            # If some params are not passed, we use the default values based on model name.
+            exclude = lambda n, p: p.ndim < 2 or "bn" in n or "ln" in n or "bias" in n or 'logit_scale' in n
+            include = lambda n, p: not exclude(n, p)
 
-        named_parameters = list(model.named_parameters())
-        gain_or_bias_params = [p for n, p in named_parameters if exclude(n, p) and p.requires_grad]
-        rest_params = [p for n, p in named_parameters if include(n, p) and p.requires_grad]
+            named_parameters = list(model.named_parameters())
+            gain_or_bias_params = [p for n, p in named_parameters if exclude(n, p) and p.requires_grad]
+            rest_params = [p for n, p in named_parameters if include(n, p) and p.requires_grad]
 
-        optimizer = optim.AdamW(
-            [
-                {"params": gain_or_bias_params, "weight_decay": 0.},
-                {"params": rest_params, "weight_decay": args.wd},
-            ],
-            lr=args.lr,
-            betas=(args.beta1, args.beta2),
-            eps=args.eps,
-        )
+            if opt == 'adamw':
+                optimizer = optim.AdamW(
+                    [
+                        {"params": gain_or_bias_params, "weight_decay": 0.},
+                        {"params": rest_params, "weight_decay": args.wd},
+                    ],
+                    lr=args.lr,
+                    betas=(args.beta1, args.beta2),
+                    eps=args.eps,
+                )
+            else:
+                assert False, f'Unknown optimizer {opt}'
+
+        if is_master(args):
+            if is_master(args):
+                defaults = copy.deepcopy(optimizer.defaults)
+                defaults['weight_decay'] = args.wd
+                defaults = ', '.join([f'{k}: {v}' for k, v in defaults.items()])
+                logging.info(
+                    f'Created {type(optimizer).__name__} ({args.opt}) optimizer: {defaults}'
+                )
+
         if args.horovod:
             optimizer = hvd.DistributedOptimizer(optimizer, named_parameters=model.named_parameters())
             hvd.broadcast_parameters(model.state_dict(), root_rank=0)
             hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
-        scaler = GradScaler() if args.precision == "amp" else None
+        scaler = None
+        if args.precision == "amp":
+            try:
+                scaler = torch.amp.GradScaler(device=device)
+            except (AttributeError, TypeError) as e:
+                scaler = torch.cuda.amp.GradScaler()
 
     # optionally resume from a checkpoint
     start_epoch = 0
@@ -369,7 +417,7 @@ def main(args):
             logging.info(f"=> loaded checkpoint '{args.resume}' (epoch {start_epoch})")
 
     # initialize datasets
-    tokenizer = get_tokenizer(args.model)
+    tokenizer = get_tokenizer(args.model, cache_dir=args.cache_dir)
     data = get_data(
         args,
         (preprocess_train, preprocess_val),
@@ -432,6 +480,12 @@ def main(args):
     original_model = model
     if args.torchcompile:
         logging.info('Compiling model...')
+
+        if args.grad_checkpointing and args.distributed:
+            logging.info('Disabling DDP dynamo optimizer when grad checkpointing enabled.')
+            # As of now (~PyTorch 2.4/2.5), compile + grad checkpointing work, but DDP optimizer must be disabled
+            torch._dynamo.config.optimize_ddp = False
+
         model = torch.compile(original_model)
 
     if 'train' not in data:
