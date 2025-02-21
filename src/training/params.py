@@ -90,6 +90,12 @@ def parse_args(args):
         help="For csv-like datasets, the name of the key for the captions."
     )
     parser.add_argument(
+        "--wds-caption-key",
+        type=str,
+        default="txt",
+        help="For wds datasets, the name of the key for the captions."
+    )
+    parser.add_argument(
         "--imagenet-val",
         type=str,
         default=None,
