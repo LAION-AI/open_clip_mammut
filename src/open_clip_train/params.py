@@ -29,7 +29,7 @@ def parse_args(args):
         "--train-data",
         type=str,
         default=None,
-        help="Path to file(s) with training data. When using webdataset, multiple datasources can be combined using the `::` separator.",
+        help="Path to file(s) (can also be a directory with *.tar files if webdataset is used) with training data. When using webdataset, multiple datasources can be combined using the `::` separator.",
     )
     parser.add_argument(
         "--train-data-upsampling-factors",
