@@ -29,7 +29,7 @@ def parse_args(args):
         "--train-data",
         type=str,
         default=None,
-        help="Path to file(s) with training data. When using webdataset, multiple datasources can be combined using the `::` separator.",
+        help="Path to file(s) (can also be a directory with *.tar files if webdataset is used) with training data. When using webdataset, multiple datasources can be combined using the `::` separator.",
     )
     parser.add_argument(
         "--train-data-upsampling-factors",
@@ -88,6 +88,12 @@ def parse_args(args):
         type=str,
         default="title",
         help="For csv-like datasets, the name of the key for the captions."
+    )
+    parser.add_argument(
+        "--wds-caption-key",
+        type=str,
+        default="txt",
+        help="For wds datasets, the name of the key for the captions."
     )
     parser.add_argument(
         "--imagenet-val",

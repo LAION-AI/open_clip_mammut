@@ -19,6 +19,7 @@ from torch.utils.data import Dataset, DataLoader, SubsetRandomSampler, IterableD
 from torch.utils.data.distributed import DistributedSampler
 from webdataset.filters import _shuffle
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
+import glob
 
 try:
     import horovod.torch as hvd
@@ -73,7 +74,10 @@ class DataInfo:
 
 def expand_urls(urls, weights=None):
     if weights is None:
-        expanded_urls = wds.shardlists.expand_urls(urls)
+        if isinstance(urls, str):
+            expanded_urls = wds.shardlists.expand_urls(urls)
+        else:
+            expanded_urls = list(urls)
         return expanded_urls, None
     if isinstance(urls, str):
         urllist = urls.split("::")
@@ -192,6 +196,8 @@ def group_by_keys_nothrow(data, keys=base_plus_ext, lcase=True, suffixes=None, h
     current_sample = None
     for filesample in data:
         assert isinstance(filesample, dict)
+        if "fname" not in filesample or "data" not in filesample:
+            continue
         fname, value = filesample["fname"], filesample["data"]
         prefix, suffix = keys(fname)
         if prefix is None:
@@ -326,7 +332,12 @@ class ResampledShards2(IterableDataset):
 
 
 def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokenizer=None):
-    input_shards = args.train_data if is_train else args.val_data
+    if is_train and os.path.isdir(args.train_data):
+        input_shards = glob.glob(os.path.join(args.train_data, '*.tar'))
+    elif not is_train and os.path.isdir(args.val_data):
+        input_shards = glob.glob(os.path.join(args.val_data, '*.tar'))
+    else:
+        input_shards = args.train_data if is_train else args.val_data
     assert input_shards is not None
     resampled = getattr(args, 'dataset_resampled', False) and is_train
 
@@ -386,11 +397,17 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
             # at this point, we have an iterator over the shards assigned to each worker
             wds.tarfile_to_samples(handler=log_and_continue),
         ])
+
+    def decode_text(text):
+        if isinstance(text, bytes):
+            text = text.decode('utf-8')
+        return text
+
     pipeline.extend([
         wds.select(filter_no_caption_or_no_image),
         wds.decode("pilrgb", handler=log_and_continue),
-        wds.rename(image="jpg;png;jpeg;webp", text="txt"),
-        wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(text)[0]),
+        wds.rename(image="jpg;png;jpeg;webp", text=args.wds_caption_key),
+        wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(decode_text(text))[0]),
         wds.to_tuple("image", "text"),
         wds.batched(args.batch_size, partial=not is_train)
     ])
