@@ -197,6 +197,7 @@ def group_by_keys_nothrow(data, keys=base_plus_ext, lcase=True, suffixes=None, h
     for filesample in data:
         assert isinstance(filesample, dict)
         if "fname" not in filesample or "data" not in filesample:
+            logging.warning(f"Invalid filesample: {filesample}")
             continue
         fname, value = filesample["fname"], filesample["data"]
         prefix, suffix = keys(fname)
@@ -332,8 +333,18 @@ class ResampledShards2(IterableDataset):
 
 
 def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokenizer=None):
-    if is_train and os.path.isdir(args.train_data):
-        input_shards = glob.glob(os.path.join(args.train_data, '*.tar'))
+    if "::" in args.train_data:
+        if os.path.isdir(args.train_data.split("::")[0]):
+            args.train_data = args.train_data.split("::")
+    else:
+        if os.path.isdir(args.train_data):
+            args.train_data = [args.train_data]
+    if is_train and isinstance(args.train_data, list):
+        train_data_dirs = args.train_data
+        input_shards = []
+        for train_data_dir in train_data_dirs:
+            assert os.path.isdir(train_data_dir), f"Directory {train_data_dir} does not exist."
+            input_shards.extend(glob.glob(os.path.join(train_data_dir, '*.tar')))
     elif not is_train and os.path.isdir(args.val_data):
         input_shards = glob.glob(os.path.join(args.val_data, '*.tar'))
     else:
@@ -359,7 +370,7 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
 
     if is_train and args.train_data_upsampling_factors is not None:
         assert resampled, "--train_data_upsampling_factors is only supported when sampling with replacement (with --dataset-resampled)."
-    
+    # print("input_shards", input_shards)
     if resampled:
         pipeline = [ResampledShards2(
             input_shards,
@@ -403,11 +414,36 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
             text = text.decode('utf-8')
         return text
 
+
+    def get_random_caption(weights, **kwargs):
+        captions = kwargs.values()
+        if weights is not None:
+            text =  random.choices(captions, weights=weights, k=1)[0]
+        text = random.choice(captions)
+        return {"text": text}
+
+
+    wds_caption_key = args.wds_caption_key or 'txt'
+    if "::" in wds_caption_key:
+        wds_caption_key = wds_caption_key.split("::")
+        wds_caption_sampling_weights = args.wds_caption_sampling_weights
+        if wds_caption_sampling_weights is not None:
+            wds_caption_sampling_weights = wds_caption_sampling_weights.split("::")
+            wds_caption_sampling_weights = [float(weight) for weight in wds_caption_sampling_weights]
+            assert len(wds_caption_key) == len(wds_caption_sampling_weights),\
+                f"Number of caption keys {len(wds_caption_key)} and weights {len(wds_caption_sampling_weights)} should match."
+    else:
+        wds_caption_key = [wds_caption_key]
+        wds_caption_sampling_weights = None
+
+
     pipeline.extend([
         wds.select(filter_no_caption_or_no_image),
         wds.decode("pilrgb", handler=log_and_continue),
-        wds.rename(image="jpg;png;jpeg;webp", text=args.wds_caption_key),
+        wds.rename(image="jpg;png;jpeg;webp", text=wds_caption_key[0]),
+        # wds.select(lambda sample: get_random_caption(wds_caption_sampling_weights, **{key: sample[key] for key in wds_caption_key})),
         wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(decode_text(text))[0]),
+        # wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(decode_text(text))[0]),
         wds.to_tuple("image", "text"),
         wds.batched(args.batch_size, partial=not is_train)
     ])
