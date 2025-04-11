@@ -93,7 +93,15 @@ def parse_args(args):
         "--wds-caption-key",
         type=str,
         default="txt",
-        help="For wds datasets, the name of the key for the captions."
+        help=("For wds datasets, the name of the key(s) for the captions.",
+              "Can be a list of keys separated by `::`.")
+    )
+    parser.add_argument(
+        "--wds-caption-sampling-weights",
+        type=str,
+        default=None,
+        help=("For wds datasets, if multiple caption keys are provided, this can be used to specify the sampling weights for each key.",
+              "Should be a list of floats separated by `::`.")
     )
     parser.add_argument(
         "--imagenet-val",
