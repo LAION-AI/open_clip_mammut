@@ -50,6 +50,9 @@ class MaMMUT(nn.Module, Generator):
         quick_gelu: bool = False,
         cast_dtype: Optional[torch.dtype] = None,
         pad_id: int = 0,
+        init_logit_scale: float = np.log(1 / 0.07),
+        init_logit_bias: Optional[float] = None,
+        nonscalar_logit_scale: bool = False,
     ):
         super().__init__()
         multimodal_cfg = MultimodalCfg(**text_cfg) if isinstance(text_cfg, dict) else text_cfg
@@ -79,8 +82,12 @@ class MaMMUT(nn.Module, Generator):
 
         self.context_length = multimodal_cfg.context_length
         self.map_viz2txt_kv = nn.Parameter(torch.randn(vision_cfg.width, multimodal_cfg.width))
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-        self.logit_bias = None
+        lshape = [1] if nonscalar_logit_scale else []
+        self.logit_scale = nn.Parameter(torch.ones(lshape) * init_logit_scale)
+        if init_logit_bias is not None:
+            self.logit_bias = nn.Parameter(torch.ones(lshape) * init_logit_bias)
+        else:
+            self.logit_bias = None
         self.pad_id = pad_id
         self.use_contrastive = True
 
