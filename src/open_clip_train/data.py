@@ -20,6 +20,7 @@ from torch.utils.data.distributed import DistributedSampler
 from webdataset.filters import _shuffle
 from webdataset.tariterators import base_plus_ext, url_opener, tar_file_expander, valid_sample
 import glob
+import time
 
 try:
     import horovod.torch as hvd
@@ -216,6 +217,33 @@ def group_by_keys_nothrow(data, keys=base_plus_ext, lcase=True, suffixes=None, h
             current_sample[suffix] = value
     if valid_sample(current_sample):
         yield current_sample
+
+class AccumulatingHandler:
+    def __init__(self, timeout=20):
+        self.exceptions = {}
+        self.timeout = timeout # print out summary every timeout seconds
+        self.start_time = time.time()
+        self.last_time = self.start_time
+
+    def __enter__(self):
+        self.exceptions = {}
+        return self
+
+    def __call__(self, exn):
+        self.exceptions[exn] = self.exceptions.get(exn, 0) + 1
+        if time.time() - self.last_time > self.timeout:
+            self.last_time = time.time()
+            logging.warning(f"AccumulatingHandler: {self.exceptions}")
+            self.exceptions = {}
+        return True
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            self.exceptions[exc_type] = self.exceptions.get(exc_type, 0) + 1
+        return True
+
+    def __repr__(self):
+        return f"AccumulatingHandler({self.exceptions})"
 
 
 def tarfile_to_samples_nothrow(src, handler=log_and_continue):
@@ -436,10 +464,11 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
         wds_caption_key = [wds_caption_key]
         wds_caption_sampling_weights = None
 
+    accumulating_handler = AccumulatingHandler()
 
     pipeline.extend([
         wds.select(filter_no_caption_or_no_image),
-        wds.decode("pilrgb", handler=log_and_continue),
+        wds.decode("pilrgb", handler=accumulating_handler),
         wds.rename(image="jpg;png;jpeg;webp", text=wds_caption_key[0]),
         # wds.select(lambda sample: get_random_caption(wds_caption_sampling_weights, **{key: sample[key] for key in wds_caption_key})),
         wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(decode_text(text))[0]),
