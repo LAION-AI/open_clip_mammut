@@ -219,7 +219,7 @@ def group_by_keys_nothrow(data, keys=base_plus_ext, lcase=True, suffixes=None, h
         yield current_sample
 
 class AccumulatingHandler:
-    def __init__(self, timeout=20):
+    def __init__(self, timeout=60):
         self.exceptions = {}
         self.timeout = timeout # print out summary every timeout seconds
         self.start_time = time.time()
