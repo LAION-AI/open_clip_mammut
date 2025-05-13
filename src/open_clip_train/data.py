@@ -175,6 +175,16 @@ def count_samples(dataloader):
     return n_elements, n_batches
 
 
+class FilterNoCaptionorImage:
+    def __init__(self, wds_caption_key):
+        self.wds_caption_key = wds_caption_key
+
+    def __call__(self, sample):
+        has_caption = (self.wds_caption_key in sample)
+        has_image = ('png' in sample or 'jpg' in sample or 'jpeg' in sample or 'webp' in sample)
+        return has_caption and has_image
+
+
 def filter_no_caption_or_no_image(sample):
     has_caption = ('txt' in sample)
     has_image = ('png' in sample or 'jpg' in sample or 'jpeg' in sample or 'webp' in sample)
@@ -197,7 +207,7 @@ def group_by_keys_nothrow(data, keys=base_plus_ext, lcase=True, suffixes=None, h
     for filesample in data:
         assert isinstance(filesample, dict)
         if "fname" not in filesample or "data" not in filesample:
-            logging.warning(f"Invalid filesample: {filesample}")
+            # logging.warning(f"Invalid filesample: {filesample}")
             continue
         fname, value = filesample["fname"], filesample["data"]
         prefix, suffix = keys(fname)
@@ -435,7 +445,9 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
     else:
         wds_caption_key = [wds_caption_key]
         wds_caption_sampling_weights = None
-
+    
+    
+    filter_no_caption_or_no_image = FilterNoCaptionorImage(wds_caption_key[0])
 
     pipeline.extend([
         wds.select(filter_no_caption_or_no_image),
