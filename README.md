@@ -3,6 +3,9 @@
 This is a fork of [OpenCLIP](https://github.com/mlfoundations/open_clip) that implements [MaMMUT](https://arxiv.org/abs/2303.16839).
 
 The following is the original README from the upstream OpenCLIP repository:
+
+---
+
 # OpenCLIP
 
 [[Paper]](https://arxiv.org/abs/2212.07143) [[Citations]](#citing) [[Clip Colab]](https://colab.research.google.com/github/mlfoundations/open_clip/blob/master/docs/Interacting_with_open_clip.ipynb) [[Coca Colab]](https://colab.research.google.com/github/mlfoundations/open_clip/blob/master/docs/Interacting_with_open_coca.ipynb)
