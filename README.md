@@ -3,9 +3,9 @@
 This is a fork of [OpenCLIP](https://github.com/mlfoundations/open_clip) that implements [MaMMUT](https://arxiv.org/abs/2303.16839).
 The fork is largely based on the MaMMUT pull request (<https://github.com/mlfoundations/open_clip/pull/641>) of Giovanni Puccetti ([@gpucce](https://github.com/gpucce)).
 
-To train MaMMUT models, you can use **mammut_*** model configs (e.g., mammut_ViT-B-32, mammut_ViT-B-16, mammut_ViT-L-14, etc).
+To train MaMMUT models, you can use **mammut_*** model configs (e.g., mammut_ViT-B-32, mammut_ViT-B-16, mammut_ViT-L-14, etc), see [model_configs](https://github.com/SLAMPAI/open_clip_mammut/tree/main/src/open_clip/model_configs).
 
-Following a an example setup with `mammut_ViT-B-32` we used to train MaMMUT ViT-B-32 on 12.8M samples from datacomp 1B with 16 GPUs:
+Following is an example setup with `mammut_ViT-B-32` we used to train MaMMUT ViT-B-32 on 12.8M samples from datacomp 1B with 16 GPUs:
 
 ```bash
 python -u src/open_clip_train/train.py \
