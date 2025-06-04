@@ -1,10 +1,11 @@
 # OpenCLIP + MaMMUT
 
 This is a fork of [OpenCLIP](https://github.com/mlfoundations/open_clip) that implements [MaMMUT](https://arxiv.org/abs/2303.16839).
-
-The following is the original README from the upstream OpenCLIP repository:
+The fork is largely based on the MaMMUT pull request (<https://github.com/mlfoundations/open_clip/pull/641>) of Giovanni Puccetti (@gpucce).
 
 ---
+
+The following is the original README from the upstream OpenCLIP repository:
 
 # OpenCLIP
 
