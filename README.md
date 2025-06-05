@@ -1,3 +1,46 @@
+# OpenCLIP + MaMMUT
+
+This is a fork of [OpenCLIP](https://github.com/mlfoundations/open_clip) that implements [MaMMUT](https://arxiv.org/abs/2303.16839).
+The fork is largely based on the MaMMUT pull request (<https://github.com/mlfoundations/open_clip/pull/641>) of Giovanni Puccetti ([@gpucce](https://github.com/gpucce)).
+
+To train MaMMUT models, you can use **mammut_*** model configs (e.g., mammut_ViT-B-32, mammut_ViT-B-16, mammut_ViT-L-14, etc), see [model_configs](https://github.com/SLAMPAI/open_clip_mammut/tree/main/src/open_clip/model_configs).
+
+Following is an example setup with `mammut_ViT-B-32` we used to train MaMMUT ViT-B-32 on 12.8M samples from datacomp 1B with 16 GPUs:
+
+```bash
+python -u src/open_clip_train/train.py \
+    --save-frequency 1 \
+    --zeroshot-frequency 1 \
+    --train-data="/path/to/datacomp1.4b/tars"  --dataset-type webdataset --dataset-resampled\
+    --train-num-samples=256000 \
+    --batch-size 128\
+    --report-to=tensorboard \
+    --epochs 50\
+    --workers=8 \
+    --model mammut_ViT-B-32\
+    --name mammut_ViT-B-32_datacomp1.4b_s12.8M \
+    --logs logs \
+    --seed 0 \
+    --local-loss \
+    --gather-with-grad \
+    --lr 0.0004 \
+    --beta1 0.9 \
+    --beta2 0.95 \
+    --wd 0.2 \
+    --warmup 500 \
+    --grad-clip-norm 1 \
+    --save-most-recent \
+    --ddp-static-graph \
+    --precision amp_bfloat16 \
+    --grad-checkpoint \
+    --resume latest
+```
+
+
+---
+
+The following is the original README from the upstream OpenCLIP repository:
+
 # OpenCLIP
 
 [[Paper]](https://arxiv.org/abs/2212.07143) [[Citations]](#citing) [[Clip Colab]](https://colab.research.google.com/github/mlfoundations/open_clip/blob/master/docs/Interacting_with_open_clip.ipynb) [[Coca Colab]](https://colab.research.google.com/github/mlfoundations/open_clip/blob/master/docs/Interacting_with_open_coca.ipynb)
