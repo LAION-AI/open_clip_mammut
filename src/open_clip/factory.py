@@ -343,7 +343,7 @@ def create_model(
     if custom_text:
         if "coca" in model_name.lower():            
             model = CoCa(**model_cfg, cast_dtype=cast_dtype)
-        elif "mammut" in model_name:
+        elif "mammut" in model_name.lower():
             model = MaMMUT(**model_cfg, cast_dtype=cast_dtype)  
         else:
             model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
