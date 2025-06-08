@@ -289,7 +289,8 @@ class Generator:
 
             # increase cur_len
             cur_len = cur_len + 1
-            if beam_scorer.is_done or stopping_criteria(input_ids, None):
+            
+            if beam_scorer.is_done or stopping_criteria(input_ids, None).all():
                 break
 
         final_beam_indices = sum(beam_indices, ()) if beam_indices is not None else None
