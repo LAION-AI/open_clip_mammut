@@ -35,7 +35,9 @@ python -u src/open_clip_train/train.py \
     --grad-checkpoint \
     --resume latest
 ```
+See also [openMammut-L-14 12.8B DataComp-1.4B HF repo](https://huggingface.co/laion/openMaMMUT-ViT-L-14-DataComp-1.4B-s12.8B-b180K#how-to-get-started-with-the-model) for further examples of openMaMMUT model usage, including caption generation. [openMammut-L-14 12.8B DataComp-1.4B](https://huggingface.co/laion/openMaMMUT-ViT-L-14-DataComp-1.4B-s12.8B-b180K) was trained using code from this repository and automated experiments workflow [autoexperiment](https://github.com/SLAMPAI/autoexperiment)
 
+This repository is also used by the paper [Scaling Laws for Robust Comparison of Open Foundation Language-Vision Models and Datasets](https://arxiv.org/abs/2506.04598), and its [research repository](https://github.com/LAION-AI/scaling-laws-for-comparison)
 
 ---
 
