@@ -22,7 +22,7 @@
     "multimodal_cfg": {
         "context_length": 76,
         "vocab_size": 49408,
-        "width": 768,
+        "width": 1024,
         "heads": 16,
         "layers": 24,
         "attn_pooler_heads": 16
