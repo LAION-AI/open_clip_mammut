@@ -128,7 +128,7 @@ def main():
         print('='*100)
         print(f'Profiling {m}')
         try:
-            row = profile_model(m, batch_size=args.batch_size, profiler=args.profiler, no_contrastive=args.no_contrastive)
+            row = profile_model(m, text_size=args.text_size, image_size=args.image_size, batch_size=args.batch_size, profiler=args.profiler, no_contrastive=args.no_contrastive)
             results.append(row)
         except Exception as e:
             print(f'Error profiling {m}: {e}')
