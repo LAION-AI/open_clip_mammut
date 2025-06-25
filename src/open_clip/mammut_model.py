@@ -7,9 +7,8 @@ import numpy as np
 
 from .model import CLIPTextCfg, CLIPVisionCfg, _build_vision_tower, _build_text_tower
 from .coca_model import MultimodalCfg
-from .transformer import QuickGELU, LayerNormFp32, LayerNorm, MultimodalTransformer
+from .transformer import QuickGELU, LayerNormFp32, LayerNorm, MultimodalDecoder
 from .generation_utils import Generator
-
 
 
 def _build_multimodal_decoder_tower(
@@ -24,7 +23,7 @@ def _build_multimodal_decoder_tower(
         LayerNormFp32 if cast_dtype in (torch.float16, torch.bfloat16) else LayerNorm
     )
 
-    decoder = MultimodalTransformer(
+    decoder = MultimodalDecoder(
         context_length=multimodal_cfg.context_length,
         width=multimodal_cfg.width,
         heads=multimodal_cfg.heads,
@@ -97,11 +96,11 @@ class MaMMUT(nn.Module, Generator):
         self.text.set_grad_checkpointing(enable)
 
     def _encode_text(self, text, image_embs):
-        token_logits, text_latent = self.text(
+        token_logits, text_latent, pad_mask = self.text(
             text_embs=text,
             image_embs=image_embs,
         )
-        return token_logits, text_latent
+        return token_logits, text_latent, pad_mask
 
     def encode_text(
         self,
@@ -110,15 +109,19 @@ class MaMMUT(nn.Module, Generator):
         normalize=True,
         output_logits=False
     ):
-        token_logits, text_latent = self._encode_text(
+        token_logits, text_latent, pad_mask = self._encode_text(
             text=text,
             image_embs=image_embs,
         )
 
+        # shift from additive padding to boolean
+        pad_mask = pad_mask > -torch.inf
+
         if output_logits:
             return token_logits
 
-        text_latent = text_latent.mean(1)
+        # padded mean pooling
+        text_latent = torch.sum(text_latent * pad_mask.unsqueeze(-1), 1) / torch.clamp(pad_mask.sum(1), min=1e-9).unsqueeze(-1)
         text_latent = F.normalize(text_latent, dim=-1) if normalize else text_latent
         return text_latent
 
@@ -130,7 +133,7 @@ class MaMMUT(nn.Module, Generator):
     def encode_image(self, image, normalize: bool=True):
         image_latent, _ = self._encode_image(image, normalize=normalize)
         return image_latent
-    
+
     def _use_contrastive(self, used):
         self.use_contrastive = used
         if not used:
