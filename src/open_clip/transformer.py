@@ -729,7 +729,7 @@ class VisionTransformer(nn.Module):
 
         if self.output_tokens:
             return pooled, tokens
-        
+
         return pooled
 
 
@@ -1062,6 +1062,185 @@ class MultimodalTransformer(nn.Module):
 
         if self.output_tokens:
             return logits, x
+
+        return logits
+
+    @torch.jit.ignore
+    def set_grad_checkpointing(self, enable=True):
+        self.grad_checkpointing = enable
+
+class MultimodalDecoder(nn.Module):
+    does_full_decoding: torch.jit.Final[bool]
+
+    def __init__(
+            self,
+            width: int,
+            layers: int,
+            heads: int,
+            context_length: int = 77,
+            mlp_ratio: float = 4.0,
+            ls_init_value: float = None,
+            act_layer: Callable = nn.GELU,
+            norm_layer: Callable = LayerNorm,
+            cross_attn_ratio = 1,
+            output_dim: int = 512,
+            does_full_decoding: bool = False, # if this is false below values are useless
+            vocab_size: int = 49408,
+            output_tokens: bool = False,
+            has_mlp: bool = True,
+            batch_first=True,
+            pad_id: int = 0
+    ):
+
+        super().__init__()
+
+        self.width = width
+        self.layers = layers
+        self.heads = heads
+        self.grad_checkpointing = False
+        self.context_length = context_length
+        self.batch_first = batch_first
+        self.pad_id = pad_id
+
+        n_cross_attn, _ = divmod(layers, cross_attn_ratio)
+        self.cross_step, _ = divmod(layers, n_cross_attn)
+
+        self.resblocks = nn.ModuleList([])
+        self.cross_attn = nn.ModuleList([])
+
+        for l_idx in range(layers):
+
+            _, r = divmod(l_idx, self.cross_step)
+            has_cross_attn = r == 0
+
+            self.resblocks.append(
+                ResidualAttentionBlock(
+                    width,
+                    heads,
+                    mlp_ratio,
+                    ls_init_value=ls_init_value,
+                    act_layer=act_layer,
+                    norm_layer=norm_layer,
+                    has_mlp=(not has_cross_attn) or has_mlp,
+                    batch_first=batch_first,
+                )
+            )
+
+            if has_cross_attn:
+                self.cross_attn.append(
+                    ResidualAttentionBlock(
+                        width,
+                        heads,
+                        mlp_ratio,
+                        ls_init_value=ls_init_value,
+                        act_layer=act_layer,
+                        norm_layer=norm_layer,
+                        is_cross_attention=True,
+                        batch_first=batch_first,
+                    )
+                )
+
+        assert len(self.cross_attn) == n_cross_attn, "the number of cross attn is incorrect"
+
+        self.ln_final = norm_layer(width)
+        self.text_projection = nn.Parameter(torch.empty(width, output_dim))
+        self.register_buffer('attn_mask', self.build_attention_mask(), persistent=False)
+        self.does_full_decoding = does_full_decoding
+
+        if self.does_full_decoding:
+            self.num_pos = self.context_length
+            self.token_embedding = nn.Embedding(vocab_size, width)
+            self.positional_embedding = nn.Parameter(torch.empty(self.num_pos, width))
+        else:
+            self.num_pos = None
+            self.token_embedding = None
+            self.positional_embedding = None
+
+        self.output_tokens = output_tokens
+
+        self.init_parameters()
+
+    def init_parameters(self):
+
+        if self.text_projection is not None:
+            nn.init.zeros_(self.text_projection)
+
+        if self.does_full_decoding:
+            nn.init.normal_(self.token_embedding.weight, std=0.02)
+            nn.init.normal_(self.positional_embedding, std=0.01)
+
+    def build_padding_mask(self, text: torch.Tensor, cast_dtype: torch.dtype, device):
+        pad_mask = (text != self.pad_id)
+        additive_mask = torch.empty(pad_mask.shape, dtype=cast_dtype, device=device)
+        additive_mask.fill_(0)
+        additive_mask.masked_fill_(~pad_mask, float("-inf"))
+        # additive_mask = torch.repeat_interleave(additive_mask, self.heads, 0)
+        return additive_mask.to(cast_dtype)
+
+    def build_attention_mask(self):
+        # lazily create causal attention mask, with full attention between the tokens
+        # pytorch uses additive attention mask; fill with -inf
+        mask = torch.empty(self.context_length, self.context_length)
+        mask.fill_(float("-inf"))
+        mask.triu_(1) # zero out the lower diagonal
+        return mask
+
+    def get_cast_dtype(self) -> torch.dtype:
+        for resblock in self.resblocks:
+            if hasattr(resblock, 'mlp') and resblock.mlp is not None:
+                if hasattr(resblock.mlp.c_fc, 'int8_original_dtype'):
+                    return resblock.mlp.c_fc.int8_original_dtype
+                return resblock.mlp.c_fc.weight.dtype
+
+    def forward(self, image_embs, text_embs):
+        seq_len = text_embs.shape[1]
+        pad_mask = self.build_padding_mask(
+            text_embs, cast_dtype=self.get_cast_dtype(), device=text_embs.device)
+        if self.does_full_decoding:
+            cast_dtype = self.get_cast_dtype()
+            text_embs = self.token_embedding(text_embs).to(cast_dtype)  # [batch_size, n_ctx, d_model]
+            text_embs = text_embs + self.positional_embedding[:seq_len].to(cast_dtype)
+
+        if not self.batch_first:
+            text_embs = text_embs.permute(1, 0, 2)  # NLD -> LND
+            if image_embs is not None:
+                image_embs = image_embs.permute(1, 0, 2)  # NLD -> LND
+
+        # TODO: handle different cases better, currently
+        # differentiates coca from mammut based on image_embs
+        if image_embs is not None:
+            attn_mask = self.attn_mask
+            attn_mask = attn_mask[:seq_len, :seq_len]
+        else:
+            attn_mask = None
+
+        for idx, resblock in enumerate(self.resblocks):
+            cross_attn_idx, r = divmod(idx, self.cross_step)
+            do_cross_attn = r == 0 and image_embs is not None
+
+            if self.grad_checkpointing and not torch.jit.is_scripting():
+                # TODO: handle kwargs https://github.com/pytorch/pytorch/issues/79887#issuecomment-1161758372
+                text_embs = checkpoint(resblock, text_embs, None, None, attn_mask)
+                if do_cross_attn:
+                    cross_attn = self.cross_attn[cross_attn_idx]
+                    text_embs = checkpoint(cross_attn, text_embs, image_embs, image_embs)
+            else:
+                text_embs = resblock(text_embs, None, None, attn_mask=attn_mask)
+                if do_cross_attn:
+                    cross_attn = self.cross_attn[cross_attn_idx]
+                    text_embs = cross_attn(text_embs, k_x=image_embs, v_x=image_embs)
+
+        assert cross_attn_idx == len(self.cross_attn) - 1, "some cross attentions are being skipped"
+
+        if not self.batch_first:
+            text_embs = text_embs.permute(1, 0, 2)  # LND -> NLD
+        x = self.ln_final(text_embs)
+
+        if self.text_projection is not None:
+            logits = x @ self.text_projection
+
+        if self.output_tokens:
+            return logits, x, pad_mask
 
         return logits
 
