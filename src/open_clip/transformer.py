@@ -154,12 +154,24 @@ class Attention(nn.Module):
         self.out_proj = nn.Linear(dim, dim)
         self.out_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x, attn_mask: Optional[torch.Tensor] = None):
-        N, L, C = x.shape
-        q, k, v = F.linear(x, self.in_proj_weight, self.in_proj_bias).chunk(3, dim=-1)
-        q = q.reshape(N, L, self.num_heads, -1).transpose(1, 2)
-        k = k.reshape(N, L, self.num_heads, -1).transpose(1, 2)
-        v = v.reshape(N, L, self.num_heads, -1).transpose(1, 2)
+    def forward(self, q_x, k_x=None, v_x=None, attn_mask: Optional[torch.Tensor] = None):
+        
+        q_only_provided = k_x is None and v_x is None
+        
+        k_x = k_x if k_x is not None else q_x
+        v_x = v_x if v_x is not None else q_x
+
+        N, L, C = q_x.shape
+        if q_only_provided:
+            q, k, v = F.linear(q_x, self.in_proj_weight, self.in_proj_bias).chunk(3, dim=-1)
+        else:
+            q = F.linear(q_x, self.in_proj_weight[:C, :], self.in_proj_bias[:C])
+            k = F.linear(k_x, self.in_proj_weight[C:2 * C, :], self.in_proj_bias[C:2 * C])
+            v = F.linear(v_x, self.in_proj_weight[2 * C:, :], self.in_proj_bias[2 * C:])
+        
+        q = q.reshape(N, q.shape[1], self.num_heads, -1).transpose(1, 2)
+        k = k.reshape(N, k.shape[1], self.num_heads, -1).transpose(1, 2)
+        v = v.reshape(N, v.shape[1], self.num_heads, -1).transpose(1, 2)
 
         if attn_mask is not None:
             if attn_mask.ndim == 3:
@@ -423,8 +435,8 @@ class CustomResidualAttentionBlock(nn.Module):
             return self.mlp.c_fc.int8_original_dtype
         return self.mlp.c_fc.weight.dtype
 
-    def forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None):
-        x = x + self.ls_1(self.ln_attn(self.attn(self.ln_1(x), attn_mask=attn_mask)))
+    def forward(self, q_x: torch.Tensor, k_x=None, v_x=None, attn_mask: Optional[torch.Tensor] = None):
+        x = q_x + self.ls_1(self.ln_attn(self.attn(self.ln_1(q_x), k_x=k_x, v_x=v_x, attn_mask=attn_mask)))
         x = x + self.ls_2(self.mlp(self.ln_2(x)))
         return x
 
@@ -1366,7 +1378,7 @@ class MultimodalTransformer(nn.Module):
                 block_type = 'custom'
             else:
                 block_type = 'default'
-
+        self.block_type = block_type
         n_cross_attn, _ = divmod(layers, cross_attn_ratio)
         self.cross_step, _ = divmod(layers, n_cross_attn)
 
