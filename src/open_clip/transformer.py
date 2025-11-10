@@ -1342,6 +1342,13 @@ class MultimodalTransformer(nn.Module):
             vocab_size: int = 49408,
             output_tokens: bool = False,
             has_mlp: bool = True,
+            block_type: Optional[str] = None,
+            qk_norm: bool = False,
+            scaled_cosine_attn: bool = False,
+            scale_heads: bool = False,
+            scale_attn_inner: bool = False,
+            scale_attn: bool = False,
+            scale_fc: bool = False,
             batch_first=True,
     ):
 
@@ -1352,6 +1359,13 @@ class MultimodalTransformer(nn.Module):
         self.grad_checkpointing = False
         self.context_length = context_length
         self.batch_first = batch_first
+        
+        # Auto-select custom block if any custom features are enabled
+        if block_type is None:
+            if any([qk_norm, scaled_cosine_attn, scale_heads, scale_attn_inner, scale_attn, scale_fc]):
+                block_type = 'custom'
+            else:
+                block_type = 'default'
 
         n_cross_attn, _ = divmod(layers, cross_attn_ratio)
         self.cross_step, _ = divmod(layers, n_cross_attn)
@@ -1363,22 +1377,45 @@ class MultimodalTransformer(nn.Module):
 
             _, r = divmod(l_idx, self.cross_step)
             has_cross_attn = r == 0
-
-            self.resblocks.append(
-                ResidualAttentionBlock(
-                    width,
-                    heads,
-                    mlp_ratio,
-                    ls_init_value=ls_init_value,
-                    act_layer=act_layer,
-                    norm_layer=norm_layer,
-                    has_mlp=(not has_cross_attn) or has_mlp,
-                    batch_first=batch_first,
+            
+            if block_type == 'custom':
+                self.resblocks.append(
+                    CustomResidualAttentionBlock(
+                        width,
+                        heads,
+                        mlp_ratio,
+                        ls_init_value=ls_init_value,
+                        act_layer=act_layer,
+                        norm_layer=norm_layer,
+                        qk_norm=qk_norm,
+                        scale_cosine_attn=scaled_cosine_attn,
+                        scale_heads=scale_heads,
+                        scale_attn_inner=scale_attn_inner,
+                        scale_attn=scale_attn,
+                        scale_fc=scale_fc,
+                        batch_first=batch_first,
+                    )
                 )
-            )
-
-            if has_cross_attn:
-                self.cross_attn.append(
+                if has_cross_attn:
+                    self.cross_attn.append(
+                        CustomResidualAttentionBlock(
+                            width,
+                            heads,
+                            mlp_ratio,
+                            ls_init_value=ls_init_value,
+                            act_layer=act_layer,
+                            norm_layer=norm_layer,
+                            qk_norm=qk_norm,
+                            scale_cosine_attn=scaled_cosine_attn,
+                            scale_heads=scale_heads,
+                            scale_attn_inner=scale_attn_inner,
+                            scale_attn=scale_attn,
+                            scale_fc=scale_fc,
+                            batch_first=batch_first,
+                        )
+                    )
+            else:
+                self.resblocks.append(
                     ResidualAttentionBlock(
                         width,
                         heads,
@@ -1386,10 +1423,23 @@ class MultimodalTransformer(nn.Module):
                         ls_init_value=ls_init_value,
                         act_layer=act_layer,
                         norm_layer=norm_layer,
-                        is_cross_attention=True,
+                        has_mlp=(not has_cross_attn) or has_mlp,
                         batch_first=batch_first,
                     )
                 )
+                if has_cross_attn:
+                    self.cross_attn.append(
+                        ResidualAttentionBlock(
+                            width,
+                            heads,
+                            mlp_ratio,
+                            ls_init_value=ls_init_value,
+                            act_layer=act_layer,
+                            norm_layer=norm_layer,
+                            is_cross_attention=True,
+                            batch_first=batch_first,
+                        )
+                    )
 
         assert len(self.cross_attn) == n_cross_attn, "the number of cross attn is incorrect"
 
@@ -1434,6 +1484,7 @@ class MultimodalTransformer(nn.Module):
                 if hasattr(resblock.mlp.c_fc, 'int8_original_dtype'):
                     return resblock.mlp.c_fc.int8_original_dtype
                 return resblock.mlp.c_fc.weight.dtype
+    
     def forward_intermediates(
             self,
             x: torch.Tensor,

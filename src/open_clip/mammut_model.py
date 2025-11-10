@@ -37,6 +37,14 @@ def _build_multimodal_decoder_tower(
         output_dim=embed_dim,
         act_layer=act_layer,
         norm_layer=norm_layer,
+        # Custom attention block settings
+        block_type=multimodal_cfg.block_type,
+        qk_norm=multimodal_cfg.qk_norm,
+        scaled_cosine_attn=multimodal_cfg.scaled_cosine_attn,
+        scale_heads=multimodal_cfg.scale_heads,
+        scale_attn_inner=multimodal_cfg.scale_attn_inner,
+        scale_attn=multimodal_cfg.scale_attn,
+        scale_fc=multimodal_cfg.scale_fc,
     )
 
     return decoder
