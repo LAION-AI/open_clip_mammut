@@ -101,7 +101,7 @@ class ClipLoss(nn.Module):
             labels = self.labels[device]
         return labels
 
-    def get_logits(self, image_features, text_features, logit_scale):
+    def get_logits(self, image_features, text_features, logit_scale, logit_bias=None):
         if self.world_size > 1:
             all_image_features, all_text_features = gather_features(
                 image_features,
@@ -123,11 +123,27 @@ class ClipLoss(nn.Module):
             logits_per_image = logit_scale * image_features @ text_features.T
             logits_per_text = logit_scale * text_features @ image_features.T
 
+        if logit_bias is not None:
+            logits_per_image += logit_bias
+            logits_per_text += logit_bias
+
         return logits_per_image, logits_per_text
 
-    def forward(self, image_features, text_features, logit_scale, output_dict=False):
+    def forward(
+            self,
+            image_features,
+            text_features,
+            logit_scale,
+            logit_bias=None,
+            output_dict=False,
+    ):
         device = image_features.device
-        logits_per_image, logits_per_text = self.get_logits(image_features, text_features, logit_scale)
+        logits_per_image, logits_per_text = self.get_logits(
+            image_features,
+            text_features,
+            logit_scale,
+            logit_bias=logit_bias,
+        )
 
         labels = self.get_ground_truth(device, logits_per_image.shape[0])
 

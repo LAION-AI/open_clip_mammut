@@ -89,6 +89,31 @@ def _mccfg(url='', hf_hub='', **kwargs):
     }
 
 
+def _mc2cfg(url='', hf_hub='', **kwargs):
+    # MobileCLIP-2
+    return {
+        'url': url,
+        'hf_hub': hf_hub,
+        'mean': OPENAI_DATASET_MEAN, # some are still 0
+        'std': OPENAI_DATASET_STD,  # some are still 1
+        'interpolation': 'bilinear',
+        'resize_mode': 'shortest',
+        **kwargs,
+    }
+
+
+def _pecfg(url='', hf_hub='', **kwargs):
+    # PE
+    return {
+        'url': url,
+        'hf_hub': hf_hub,
+        'mean': (0.5, 0.5, 0.5),
+        'std': (0.5, 0.5, 0.5),
+        'interpolation': 'bilinear',
+        'resize_mode': 'squash',
+        **kwargs,
+    }
+
 
 _RN50 = dict(
     openai=_pcfg(
@@ -510,6 +535,52 @@ _PRETRAINED = {
         webli=_slpcfg(hf_hub='timm/ViT-SO400M-14-SigLIP-384/'),
     ),
 
+    "ViT-B-32-SigLIP2-256": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-B-32-SigLIP2-256/'),
+    ),
+    "ViT-B-16-SigLIP2": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-B-16-SigLIP2/'),
+    ),
+    "ViT-B-16-SigLIP2-256": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-B-16-SigLIP2-256/'),
+    ),
+    "ViT-B-16-SigLIP2-384": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-B-16-SigLIP2-384/'),
+    ),
+    "ViT-B-16-SigLIP2-512": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-B-16-SigLIP2-512/'),
+    ),
+    "ViT-L-16-SigLIP2-256": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-L-16-SigLIP2-256/'),
+    ),
+    "ViT-L-16-SigLIP2-384": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-L-16-SigLIP2-384/'),
+    ),
+    "ViT-L-16-SigLIP2-512": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-L-16-SigLIP2-512/'),
+    ),
+    "ViT-SO400M-14-SigLIP2": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-SO400M-14-SigLIP2/'),
+    ),
+    "ViT-SO400M-14-SigLIP2-378": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-SO400M-14-SigLIP2-378/'),
+    ),
+    "ViT-SO400M-16-SigLIP2-256": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-SO400M-16-SigLIP2-256/'),
+    ),
+    "ViT-SO400M-16-SigLIP2-384": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-SO400M-16-SigLIP2-384/'),
+    ),
+    "ViT-SO400M-16-SigLIP2-512": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-SO400M-16-SigLIP2-512/'),
+    ),
+    "ViT-gopt-16-SigLIP2-256": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-gopt-16-SigLIP2-256/'),
+    ),
+    "ViT-gopt-16-SigLIP2-384": dict(
+        webli=_slpcfg(hf_hub='timm/ViT-gopt-16-SigLIP2-384/'),
+    ),
+
     "ViT-L-14-CLIPA": dict(
         datacomp1b=_apcfg(hf_hub='UCSC-VLAA/ViT-L-14-CLIPA-datacomp1B/'),
     ),
@@ -554,6 +625,13 @@ _PRETRAINED = {
         datacompdr=_mccfg(hf_hub='apple/MobileCLIP-B-OpenCLIP/'),
         datacompdr_lt=_mccfg(hf_hub='apple/MobileCLIP-B-LT-OpenCLIP/'),
     ),
+
+    "MobileCLIP2-B": dict(dfndr2b=_mccfg(hf_hub='timm/MobileCLIP2-B-OpenCLIP/')),
+    "MobileCLIP2-S0": dict(dfndr2b=_mccfg(hf_hub='timm/MobileCLIP2-S0-OpenCLIP/')),
+    "MobileCLIP2-S2": dict(dfndr2b=_mccfg(hf_hub='timm/MobileCLIP2-S2-OpenCLIP/')),
+    "MobileCLIP2-S3": dict(dfndr2b=_mc2cfg(hf_hub='timm/MobileCLIP2-S3-OpenCLIP/')),
+    "MobileCLIP2-S4": dict(dfndr2b=_mc2cfg(hf_hub='timm/MobileCLIP2-S4-OpenCLIP/')),
+    "MobileCLIP2-L-14": dict(dfndr2b=_mc2cfg(hf_hub='timm/MobileCLIP2-L-14-OpenCLIP/', interpolation='bicubic')),
 
     "ViTamin-S": dict(
         datacomp1b=_pcfg(hf_hub='jienengchen/ViTamin-S/pytorch_model.bin'),
@@ -600,6 +678,55 @@ _PRETRAINED = {
     "ViTamin-XL-384": dict(
         datacomp1b=_pcfg(hf_hub='jienengchen/ViTamin-XL-384px/pytorch_model.bin'),
     ),
+
+    "PE-Core-T-16-384": dict(
+        # original at facebook/PE-Core-T16-384/PE-Core-T16-384.pt
+        meta=_pecfg(hf_hub='timm/PE-Core-T-16-384/'),
+    ),
+    "PE-Core-S-16-384": dict(
+        # original at facebook/PE-Core-S16-384/PE-Core-S16-384.pt
+        meta=_pecfg(hf_hub='timm/PE-Core-S-16-384/'),
+    ),
+    "PE-Core-B-16": dict(
+        # original at facebook/PE-Core-B16-224/PE-Core-B16-224.pt
+        meta=_pecfg(hf_hub='timm/PE-Core-B-16/'),
+    ),
+    "PE-Core-L-14-336": dict(
+        # original at facebook/PE-Core-L14-336/PE-Core-L14-336.pt
+        meta=_pecfg(hf_hub='timm/PE-Core-L-14-336/'),
+    ),
+    "PE-Core-bigG-14-448": dict(
+        # original at facebook/PE-Core-G14-448/PE-Core-G14-448.pt
+        meta=_pecfg(hf_hub='timm/PE-Core-bigG-14-448/'),
+    ),
+
+    # MetaCLIP 2
+    "ViT-H-14-worldwide": dict(
+        metaclip2_worldwide=_pcfg(
+            hf_hub="timm/vit_huge_patch14_clip_224.metaclip2_worldwide/",
+            quick_gelu=True,
+        ),
+    ),
+    "ViT-H-14-worldwide-378": dict(
+        metaclip2_worldwide=_pcfg(
+            hf_hub="timm/vit_huge_patch14_clip_378.metaclip2_worldwide/",
+            resize_mode="squash",
+            # NOTE not quick-gelu
+        ),
+    ),
+    "ViT-bigG-14-worldwide": dict(
+        metaclip2_worldwide=_pcfg(hf_hub="timm/vit_gigantic_patch14_clip_224.metaclip2_worldwide/"),
+        # NOTE not quick-gelu
+    ),
+    "ViT-bigG-14-worldwide-378": dict(
+        metaclip2_worldwide=_pcfg(
+            hf_hub="timm/vit_gigantic_patch14_clip_378.metaclip2_worldwide/",
+            resize_mode="squash",
+            # NOTE not quick-gelu
+        ),
+
+    ),
+
 }
 
 _PRETRAINED_quickgelu = {}
@@ -772,6 +899,9 @@ def download_pretrained(
     target = ''
     if not cfg:
         return target
+
+    if 'file' in cfg:
+        return cfg['file']
 
     has_hub = has_hf_hub()
     download_url = cfg.get('url', '')

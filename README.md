@@ -62,19 +62,24 @@ We provide more details about our full collection of pretrained models [here](do
 | ConvNext-Base | LAION-2B  | 256px | 13B | 71.5% |
 | ConvNext-Large | LAION-2B  | 320px | 29B | 76.9% |
 | ConvNext-XXLarge | LAION-2B | 256px | 34B | 79.5% |
-| ViT-B/32  | DataComp-1B  | 256px | 34B | 72.8% |
-| ViT-B/16  | DataComp-1B  | 224px | 13B | 73.5% |
-| ViT-L/14  | LAION-2B  | 224px | 32B | 75.3% |
-| ViT-H/14  | LAION-2B  | 224px | 32B | 78.0% |
-| ViT-L/14  | DataComp-1B  | 224px | 13B | 79.2% |
-| ViT-G/14  | LAION-2B  | 224px | 34B | 80.1% |
+| ViT-B-32-256  | DataComp-1B  | 256px | 34B | 72.8% |
+| ViT-B-16  | DataComp-1B  | 224px | 13B | 73.5% |
+| ViT-L-14  | LAION-2B  | 224px | 32B | 75.3% |
+| ViT-H-14  | LAION-2B  | 224px | 32B | 78.0% |
+| ViT-L-14  | DataComp-1B  | 224px | 13B | 79.2% |
+| ViT-bigG-14  | LAION-2B  | 224px | 34B | 80.1% |
 |  |  |   |   |  |
-| ViT-L/14-quickgelu [(Original CLIP)](https://arxiv.org/abs/2103.00020) | WIT | 224px | 13B | 75.5% | 
-| ViT-SO400M/14 [(SigLIP)](https://arxiv.org/abs/2303.15343) | WebLI | 224px | 45B | 82.0% | 
-| ViT-L/14 [(DFN)](https://arxiv.org/abs/2309.17425) | DFN-2B | 224px | 39B | 82.2% | 
+| ViT-L-14-quickgelu [(Original CLIP)](https://arxiv.org/abs/2103.00020) | WIT | 224px | 13B | 75.5% | 
+| ViT-SO400M-14-SigLIP [(SigLIP)](https://arxiv.org/abs/2303.15343) | WebLI | 224px | 45B | 82.0% | 
+| ViT-L-14 [(DFN)](https://arxiv.org/abs/2309.17425) | DFN-2B | 224px | 39B | 82.2% | 
+| ViT-L-16-256 [(SigLIP2)](https://arxiv.org/abs/2502.14786) |  WebLI (multi-lang) | 256px | 40B | 82.5% |
 | ViT-SO400M-14-SigLIP-384 [(SigLIP)](https://arxiv.org/abs/2303.15343) |  WebLI | 384px | 45B | 83.1% |
-| ViT-H/14-quickgelu [(DFN)](https://arxiv.org/abs/2309.17425) | DFN-5B | 224px | 39B | 83.4% | 
+| ViT-H-14-quickgelu [(DFN)](https://arxiv.org/abs/2309.17425) | DFN-5B | 224px | 39B | 83.4% | 
+| PE-Core-L-14-336 [(PE)](https://arxiv.org/abs/2504.13181) | MetaCLIP-5.4B | 336px | 58B | 83.5% |
+| ViT-SO400M-16-SigLIP2-384 [(SigLIP2)](https://arxiv.org/abs/2502.14786) |  WebLI (multi-lang) | 384px | 40B | 84.1% |
 | ViT-H-14-378-quickgelu [(DFN)](https://arxiv.org/abs/2309.17425) | DFN-5B | 378px | 44B | 84.4% |
+| ViT-gopt-16-SigLIP2-384 [(SigLIP2)](https://arxiv.org/abs/2502.14786) | WebLI (multi-lang) | 384px | 40B | 85.0% |
+| PE-Core-bigG-14-448 [(PE)](https://arxiv.org/abs/2504.13181) | MetaCLIP-5.4B | 448px | 86B | 85.4% |
 
 Model cards with additional model specific details can be found on the Hugging Face Hub under the OpenCLIP library tag: https://huggingface.co/models?library=open_clip. 
 
@@ -107,7 +112,7 @@ tokenizer = open_clip.get_tokenizer('ViT-B-32')
 image = preprocess(Image.open("docs/CLIP.png")).unsqueeze(0)
 text = tokenizer(["a diagram", "a dog", "a cat"])
 
-with torch.no_grad(), torch.cuda.amp.autocast():
+with torch.no_grad(), torch.autocast("cuda"):
     image_features = model.encode_image(image)
     text_features = model.encode_text(text)
     image_features /= image_features.norm(dim=-1, keepdim=True)
@@ -117,6 +122,10 @@ with torch.no_grad(), torch.cuda.amp.autocast():
 
 print("Label probs:", text_probs)  # prints: [[1., 0., 0.]]
 ```
+
+If model uses `timm` image encoders (convnext, siglip, eva, etc) ensure the latest timm is installed. Upgrade `timm` if you see 'Unknown model' errors for the image encoder.
+
+If model uses transformers tokenizers, ensure `transformers` is installed.
 
 See also this [[Clip Colab]](https://colab.research.google.com/github/mlfoundations/open_clip/blob/master/docs/Interacting_with_open_clip.ipynb).
 
